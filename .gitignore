@@ -1,0 +1,11 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+*test.R
+
+*.html
+*.pdf
+*.xls
+*.xlsx
