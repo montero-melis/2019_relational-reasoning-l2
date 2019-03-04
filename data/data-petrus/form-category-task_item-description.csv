@@ -1,0 +1,97 @@
+uppgift;språk;item;beskrivning
+form;L1;0;1. bowlingklot 2. banan 3. kokosnöt
+form;L1;1;1. tennisracket 2. äpple 3. bowlingklot
+form;L1;2;1. bowlingklot 2. päron 3. apelsin
+form;L1;3;1. knapp 2. gurkskiva 3. rostat bröd
+form;L1;4;1. gurkskiva 2. väggklocka 3. tv-skärm
+form;L1;5;1. päron 2. rostat bröd 3. tv-skärm
+form;L1;6;1. klarinett 2. päron 3. banan
+form;L1;7;1. flöjt 2. färgburk 3. trumma
+form;L1;8;1. trumma 2. tårta 3. päron
+form;L1;9;1. ficklampa 2. tårta 3. banan
+form;L1;10;1. väggklocka 2. pizza 3. kokosnöt
+form;L1;11;1. knapp 2. rostat bröd 3. pizza
+form;L1;12;1. kam 2. hårspray 3. läskburk
+form;L1;13;1. bambu 2. flöjt 3. trumpet
+form;L1;14;1. päron 2. trumma 3. fiol
+form;L1;15;1. lampa 2. ficklampa 3. klarinett
+form;L1;16;1. färgburk 2. målarpensel 3. banan
+form;L1;17;1. målarpensel 2. flöjt 3. fiol
+form;L1;18;1. flöjt 2. banan 3. äpple
+form;L1;19;1. äpple 2. tennisracket 3. fotboll
+form;L1;20;1. banan 2. fotboll 3. apelsin
+form;L1;21;1. timglas 2. knapp 3. väggklocka
+form;L1;22;1. timglas 2. piano 3. fiol
+form;L1;23;1. ficklampa 2. flöjt 3. piano
+kategori;L1;0;1. banan 2. kokosnöt 3. bowlingklot
+kategori;L1;1;1. tennisracket 2. äpple 3. bowlingklot
+kategori;L1;2;1. bowlingklot 2. päron 3. apelsin
+kategori;L1;3;1. gurkskiva 2. rostat bröd 3. knapp
+kategori;L1;4;1. väggklocka 2. gurkskiva 3. tv-skärm
+kategori;L1;5;1. päron 2. rostat bröd 3. tv-skärm
+kategori;L1;6;1. päron 2. banan 3. klarinett
+kategori;L1;7;1. flöjt 2. färgburk 3. trumma
+kategori;L1;8;1. trumma 2. tårta 3. päron
+kategori;L1;9;1. ficklampa 2. tårta 3. banan
+kategori;L1;10;1. pizza 2. väggklocka 3. kokosnöt
+kategori;L1;11;1. knapp 2. rostat bröd 3. pizza
+kategori;L1;12;1. kam 2. hårspray 3. läskburk
+kategori;L1;13;1. bambu 2. flöjt 3. trumpet
+kategori;L1;14;1. päron 2. trumma 3. fiol
+kategori;L1;15;1. lampa 2. ficklampa 3. klarinett
+kategori;L1;16;1. färgburk 2. målarpensel 3. banan
+kategori;L1;17;1. målarpensel 2. flöjt 3. fiol
+kategori;L1;18;1. flöjt 2. banan 3. äpple
+kategori;L1;19;1. äpple 2. tennisracket 3. fotboll
+kategori;L1;20;1. banan 2. fotboll 3. apelsin
+kategori;L1;21;1. timglas 2. knapp 3. väggklocka
+kategori;L1;22;1. timglas 2. piano 3. fiol
+kategori;L1;23;1. ficklampa 2. flöjt 3. piano
+form;L2;0;1. bowling ball 2. banana 3. coconut
+form;L2;1;1. tennis racket 2. apple 3. bowling ball
+form;L2;2;1. bowling ball 2. pear 3. orange
+form;L2;3;1. button 2. cucumber slice 3. toast
+form;L2;4;1. cucumber slice 2. wall clock 3. TV screen
+form;L2;5;1. pear 2. toast 3. TV screen
+form;L2;6;1. clarinet 2. pear 3. banana
+form;L2;7;1. flute 2. paint can 3. drum
+form;L2;8;1. drum 2. cake 3. pear
+form;L2;9;1. flashlight 2. cake 3. banana
+form;L2;10;1. wall clock 2. pizza pie 3. coconut
+form;L2;11;1. button 2. toast 3. pizza pie
+form;L2;12;1. comb 2. hairspray 3. soda can
+form;L2;13;1. bamboo 2. flute 3. trumpet
+form;L2;14;1. pear 2. drum 3. violin
+form;L2;15;1. lamp 2. flashlight 3. clarinet
+form;L2;16;1. paint can 2. paintbrush 3. banana
+form;L2;17;1. paintbrush 2. flute 3. violin
+form;L2;18;1. flute 2. banana 3. apple
+form;L2;19;1. apple 2. tennis racket 3. soccerball
+form;L2;20;1. banana 2. soccerball 3. orange
+form;L2;21;1. hourglass 2. button 3. wall clock
+form;L2;22;1. hourglass 2. piano 3. violin
+form;L2;23;1. flashlight 2. flute 3. piano
+kategori;L2;0;1. bowling ball 2. banana 3. coconut
+kategori;L2;1;1. tennis racket 2. apple 3. bowling ball
+kategori;L2;2;1. bowling ball 2. pear 3. orange
+kategori;L2;3;1. button 2. cucumber slice 3. toast
+kategori;L2;4;1. wall clock 2. cucumber slice 3. TV screen
+kategori;L2;5;1. pear 2. toast 3. TV screen
+kategori;L2;6;1. clarinet 2. pear 3. banana
+kategori;L2;7;1. flute 2. paint can 3. drum
+kategori;L2;8;1. drum 2. cake 3. pear
+kategori;L2;9;1. cake 2. banana 3. flashlight
+kategori;L2;10;1. wall clock 2. pizza pie 3. coconut
+kategori;L2;11;1. button 2. toast 3. pizza pie
+kategori;L2;12;1. comb 2. hairspray 3. soda can
+kategori;L2;13;1. bamboo 2. flute 3. trumpet
+kategori;L2;14;1. pear 2. drum 3. violin
+kategori;L2;15;1. lamp 2. flashlight 3. clarinet
+kategori;L2;16;1. paint can 2. paintbrush 3. banana
+kategori;L2;17;1. flute 2. paintbrush 3. violin
+kategori;L2;18;1. flute 2. banana 3. apple
+kategori;L2;19;1. apple 2. tennis racket 3. soccerball
+kategori;L2;20;1. banana 2. soccerball 3. orange
+kategori;L2;21;1. hourglass 2. button 3. wall clock
+kategori;L2;22;1. hourglass 2. piano 3. violin
+kategori;L2;23;1. flute 2. piano 3. flashlight
