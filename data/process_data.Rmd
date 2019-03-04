@@ -1,0 +1,61 @@
+---
+title: "Relational reasoning in L2 - data processing"
+author: '[Guillermo Montero-Melis](https://www.mpi.nl/people/montero-melis-guillermo)'
+date: '`r as.character(format(Sys.Date(), format="%d/%m/%Y"))`'
+output:
+  html_document:
+    depth: 2
+    number_sections: yes
+    theme: default
+    toc: yes
+---
+
+
+Introduction
+============
+
+This script processes the raw data as provided by Petrus I and documents each
+step. 
+
+NB:
+
+- I've previously saved all data files into the folder `data/data-petrus`.
+- Because the data contains non-standard Swedish characters, all files have been
+converted to UTF-8 encoding.
+
+
+Setup workspace
+===============
+
+
+```{r setup, include=TRUE}
+library(knitr)
+library(dplyr)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+Form/category task
+==================
+
+Load the data as provided by Petrus. 
+
+```{r}
+# d(ata) for f(orm) and c(ategory) task
+d_fc <- read.csv("data-petrus/form-category-task_trial-level-data.csv", sep = ";", 
+                 fileEncoding = "UTF-8", stringsAsFactors = FALSE)
+head(d_fc)
+```
+
+Note there are unwanted columns (this happens often when converting Excel 
+files into CSV). Remove them
+
+```{r}
+# We also rename some of the columns
+d_fc <- d_fc %>%
+  select(Subject, Task, Language = Lang., Trial, Score, ItemID = Item, Comment = notes)
+kable(head(d_fc))
+```
+
+
