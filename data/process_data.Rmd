@@ -28,16 +28,24 @@ Setup workspace
 ===============
 
 
-```{r setup, include=TRUE}
+```{r setup, include=TRUE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
 library(knitr)
 library(dplyr)
-knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(tidyr)
+library(lme4)
+library(GGally)
 ```
 
 
 
 Form/category task
 ==================
+
+
+Trial-level data
+-----------------
 
 Load the data as provided by Petrus. 
 
@@ -49,13 +57,107 @@ head(d_fc)
 ```
 
 Note there are unwanted columns (this happens often when converting Excel 
-files into CSV). Remove them
+files into CSV). Remove them:
 
 ```{r}
 # We also rename some of the columns
 d_fc <- d_fc %>%
-  select(Subject, Task, Language = Lang., Trial, Score, ItemID = Item, Comment = notes)
+  select(Subject, Task, Language = Lang., Trial, Score, ItemID = Item, 
+         Comment = notes)
 kable(head(d_fc))
 ```
 
+
+### Sanity checks
+
+Number of subjects (unique Subject ID's):
+`r length(unique(d_fc$Subject))`
+
+How many data points using different cross-tabulations:
+
+```{r}
+with(d_fc, table(Task, Subject, Language))
+```
+
+Looks like the data set is complete and balanced.
+
+How many values are there in the table above that are not equal to 24?
+
+```{r}
+sum(with(d_fc, table(Task, Subject, Language)) != 24)
+```
+
+
+We can look at the same thing from the point of view of the items:
+
+```{r}
+with(d_fc, table(Task, ItemID, Language))
+sum(with(d_fc, table(Task, ItemID, Language)) != 24)
+```
+
+Again, everything is balanced and there is no missing data.
+
+
+Item data
+---------
+
+```{r}
+# Load item data
+fc_items <- read.csv("data-petrus/form-category-task_item-description.csv",
+                     sep = ";", fileEncoding = "UTF-8", stringsAsFactors = FALSE)
+head(fc_items)
+```
+
+```{r}
+# Rename columns so they match the trial-level data
+fc_items <- fc_items %>% rename(Task = uppgift, Language = språk, ItemID = item,
+                                Descr = beskrivning)
+kable(head(fc_items))
+```
+
+Again, some sanity checks:
+
+```{r}
+with(fc_items, table(Task, Language))
+```
+
+Looks good!
+
+
+Now let's look at the actual descriptions of the items (`Descr` column).
+How often does each description appear?
+
+```{r}
+fc_items %>% 
+  group_by(Descr) %>% 
+  summarise(NumberOfIdenticalItems = n())
+```
+
+Some items appear twice and some only appear once.
+What happens is that some items are the same for both tasks in a given language,
+but others are not
+
+```{r}
+fc_items %>% 
+  group_by(Descr) %>% 
+  summarise(NumberOfIdenticalItems = n()) %>%
+  group_by(NumberOfIdenticalItems) %>%
+  summarise(Freq = n())
+```
+
+If we rearrange the data into wide format, we can more easily compare the items
+within a language but across tasks:
+
+```{r}
+# From long to wide, see
+# http://www.cookbook-r.com/Manipulating_data/Converting_data_between_wide_and_long_format/
+fc_items_w <- fc_items %>%
+  spread(Task, Descr)
+# Create variable to compare the two columns
+fc_items_w$SameDescr <- with(fc_items_w, form == kategori)
+# Show all items that are *not* the same
+kable(fc_items_w[! fc_items_w$SameDescr, ])
+```
+
+So the 9 items that are different contain the same words, but ordered differently.
 
