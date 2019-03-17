@@ -32,10 +32,7 @@ Setup workspace
 knitr::opts_chunk$set(echo = TRUE)
 library(knitr)
 library(dplyr)
-library(ggplot2)
 library(tidyr)
-library(lme4)
-library(GGally)
 ```
 
 
@@ -68,7 +65,7 @@ kable(head(d_fc))
 ```
 
 
-### Sanity checks
+**Some sanity checks**
 
 Number of subjects (unique Subject ID's):
 `r length(unique(d_fc$Subject))`
@@ -292,6 +289,13 @@ kable(head(d_fc_full))
 
 Save to disk
 -----------
+
+Before saving, change level names to English:
+
+```{r}
+d_fc_full$Task <- ifelse(d_fc_full$Task == "form", "Shape", "Category")
+```
+
 
 Save to disk:
 
