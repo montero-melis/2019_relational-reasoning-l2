@@ -14,7 +14,7 @@ output:
 Introduction
 ============
 
-This script processes the raw data as provided by Petrus I and documents each
+This script processes the raw data as provided by Petrus and documents each
 step. 
 
 NB:
@@ -160,4 +160,322 @@ kable(fc_items_w[! fc_items_w$SameDescr, ])
 ```
 
 So the 9 items that are different contain the same words, but ordered differently.
+
+In conclusion, the items' IDs are really quite comparable across languages and
+tasks, close to a few instances of reorderings.
+
+
+Combine trial-level data with item descriptions
+------------------------------------------
+
+Join the trial-level data with the item data:
+
+```{r}
+d_fc_full <- left_join(d_fc, fc_items)
+kable(head(d_fc_full))
+```
+
+
+`Comments` column: participant 7
+--------------
+
+For participant 7, Petrus notes:
+
+> Denna deltagare svarade av misstag på kategori då hen skulle svara på form och
+tvärtom. Därför gäller de korrekta svaren här varje item som tillhör motsatt
+uppgift, men uppgiften är trots detta den som står utskriven.
+>
+> Exempel: På rad 578 har deltagare 7 svarat korrekt för item 2 kategori, men svaret gäller ändå form, inte kategori, precis som det står i tabellen. Vill vi se vilket item deltagaren har angett mest annorlunda form för, på rad 578, tittar vi på rad 28 i Item formuppgift. Där kan vi se det item deltagaren svarade på."
+
+See here the data for that participant
+
+```{r}
+d_fc_full[d_fc_full$Comment != "", ] %>% kable
+```
+
+
+So if I understand correctly, I do not need to change the value of the column
+`Task`. That's already been done by Petrus.
+The only thing that is inaccurate is the item descriptions for this participant.
+On the other hand, the differences between items are very minor, they only
+concern the order of the words, not the words themselves.
+
+Therefore we will just ignore this error. What we will do instead is running
+the analyses with and without participant 7 to see if that has a big influence
+on the results.
+
+
+Information about task order
+---------------------------
+
+Petrus explains:
+
+> Här beskrivs i vilken ordning deltagarna genomförde deluppgifterna form och
+kategori. Ordningen var slumpmässig.
+
+
+```{r}
+# Load and rename columns
+fc_order <- read.csv("data-petrus/form-category-task_task-order.csv", sep = ";",
+                     fileEncoding = "UTF-8", stringsAsFactors = FALSE) %>%
+  rename(Task = task, Language = language)
+kable(head(fc_order))
+```
+
+This data frame is not in an ideal format: this is because information is
+encoded in the current order of the rows, and that is not ideal. It is much
+better to *explicitly* encode the information in a column, because rows
+always run the risk of getting shuffled around. To understand what is meant,
+imagine that I accidentally shuffle rows 1 and 2. It would look like Subject 1
+first did the category and then the shape task (in English), and there would
+be nothing in the data frame to help me discover this error.
+
+So to remedy this, let's start by emplicitly encoding the task order:
+
+```{r}
+fc_order$TaskOrder <- 1:4
+kable(head(fc_order, 10))
+```
+
+
+It's more useful to see the order in which the tasks were performed as a single
+piece of information. We can achieve that by creating a small custom function
+that does this for each subject:
+
+```{r, warning = FALSE}
+# Not super elegant perhaps, but hey...
+my_task_fnc <- function(df) {
+  x <- with(df, paste(Language, Task, sep = "."))
+  data.frame(TaskOrder = paste(x, collapse = "-->"))
+}
+task_order <- fc_order %>% group_by(Subject) %>% do(my_task_fnc(.))
+head(task_order)
+```
+
+Now we can see how many different unique task orders there were and how many
+participants there were for each of them:
+
+```{r}
+task_order %>% group_by(TaskOrder) %>% summarise(Freq = n())
+```
+
+
+Okay, now I get the idea:
+
+- The two tasks were always carried out in the same language sequentially,
+either starting with L1 and then L2 or the other way around.
+- Which language they started with (L1 or L2) was roughly counterbalanced.
+- However, which task they did first in a given language was probably completely
+random, leading to the unequal counts in the table above.
+
+Because this is unsystematic, I will do the following:
+
+- Keep track of the language order`, i.e. whether they started with L1 and then
+L2 or the other way around;
+- Ignore the order in which they carried out the tasks within each language.
+
+```{r}
+fc_langorder <- fc_order %>% filter(TaskOrder == 1)
+fc_langorder$LangOrder <- with(fc_langorder, 
+                               ifelse(Language == "En", "L2-L1", "L1-L2"))
+fc_langorder <- fc_langorder %>% select(Subject, LangOrder)
+head(fc_langorder)
+```
+
+Combine (join) with the trial-level data frame:
+
+```{r}
+d_fc_full <- left_join(d_fc_full, fc_langorder)
+kable(head(d_fc_full))
+```
+
+
+Save to disk
+-----------
+
+Save to disk:
+
+```{r}
+write.csv(d_fc_full, "data_form-category-task.csv", row.names = FALSE,
+          fileEncoding = "UTF-8")
+```
+
+
+
+Matching task
+============
+
+Petrus's description:
+
+> Här beskrivs svaren från deltagarnas matching task där de skulle matcha ett
+engelskt ord med en bild av ordet. 30 engelska ord skulle matchas med var sin
+bild. Varje item bestod av de 30 orden och en bild av ett av orden. Orden
+valdes genom att trycka på en tangent - a-z, eller 1-4."
+>
+> `key press`: Här anges vilken tangent - och alltså vilket ord - deltagarna
+valde för respektive bild.
+
+
+Load the data
+
+```{r}
+# Load the data and show first rows
+# We also rename some columns
+d_match <- read.csv("data-petrus/matching-task_trial-level-data.csv", sep = ";",
+                 fileEncoding = "UTF-8", stringsAsFactors = FALSE) %>%
+  rename(Subject = subject, ImageFile = item, Score = score, KeyPress = key.press)
+head(d_match)
+match_items <- read.csv("data-petrus/matching-task_item-description.csv", sep = ";",
+                        fileEncoding = "UTF-8", stringsAsFactors = FALSE) %>%
+  rename(ImageFile = item, CorrKey = corr.key, TargetWord = word)
+head(match_items)
+```
+
+
+Sanity checks
+------------
+
+Table of ImageFiles in the data
+
+```{r}
+table(d_match$ImageFile)
+sum(table(d_match$ImageFile) != 24)
+```
+
+Good, looks like data is complete
+
+No repeated image files in the item description?
+
+```{r}
+table(match_items$ImageFile)
+sum(table(match_items$ImageFile) != 1)
+```
+No; good.
+
+
+Now let's make sure each ImageFile in one of the data frames also appears in
+the other:
+
+```{r}
+sum(! unique(d_match$ImageFile) %in% unique(match_items$ImageFile))
+sum(! unique(match_items$ImageFile) %in% unique(d_match$ImageFile))
+```
+
+Excellent.
+
+
+Combine files
+------------
+
+```{r}
+d_match_full <- left_join(d_match, match_items)
+kable(head(d_match_full))
+```
+
+Let's make sure that `Score` = 1 iff `KeyPress` and `CorrKey` coincide:
+
+```{r}
+# add the number of mismatches between the two
+sum(as.numeric(with(d_match_full, KeyPress == CorrKey)) != d_match_full$Score)
+```
+
+Great, zero mismatches: the two coincide perfectly!
+
+
+Save to disk
+-----------
+
+```{r}
+write.csv(d_match_full, "data_matching-task.csv", row.names = FALSE,
+          fileEncoding = "UTF-8")
+```
+
+
+
+
+Inference task
+=============
+
+Petrus's description of the trial-level data:
+
+> Den här datan är fullständig. Inget har tagits bort.
+>
+> - *Lang.*: Alla 24 slutledningar löstes på såväl L1 som L2.
+> - *Type*: Här anges vilken typ av slutledning det gäller - kontroll, visuell eller visuospatial.
+> - *Item*: Här anges vilken specifik slutledning som deltagaren har läst [GMM: hört?]. Det finns 8 slutledningar för varje typ av slutledning på vart och ett av språken - totalt 24 på L1 och 24 på L2. Se bifogad lista (De 24 slutledningarna på L1 och L2) för alla förekomster med beteckning N1 - N24 för L1-slutledningar, och R1 - R24 för L2-slutledningar. Var uppmärksam på att beteckningarna skiljer sig åt mellan språken. T.ex. är R1 visuell medan N1 är visuospatial. Det här beror på en miss i beteckningarna som smög sig in i ett tidigt skede. 
+> - *Trial*: Ordningen deltagarna löste de specifika slutledningarna i var slumpmässig.
+> - *RT* (gammal):
+För deltagare 1, och 7 - 24, visas här RT från 2 sekunder före början av det sista ordet i slutledningen. Dessa deltagare kunde svara så fort det var möjligt att veta svaret, till skillnad från deltagare 2 - 6, som inte kunde svara tidigare än vid början av det sista ordet i slutledningen. För deltagare 2 - 6 visas RT från början av det sista ordet i slutledningen. Dessa deltagare visade dock inte att de hade velat svara tidigare än vad som var möjligt för dem. 
+> - *RT*:
+Här visas RT från början av det sista ordet i slutledningen, vilket innebär att några RT är negativa.
+
+
+```{r}
+# data inference task
+d_inf <- read.csv("data-petrus/inference-task_trial-level-data.csv", sep = ";",
+                 fileEncoding = "UTF-8", stringsAsFactors = FALSE)
+kable(head(d_inf))
+```
+
+Rename some columns for consistency and keep only column `RT` (remove `RT.gammal`).
+
+```{r}
+d_inf <- d_inf %>% select(Subject, Language = Lang., Type : Score, RT)
+kable(head(d_inf))
+```
+
+
+Item data
+---------
+
+```{r}
+# Load item data
+inf_items <- read.csv("data-petrus/inference-task_item-description.csv", sep = ";",
+                      fileEncoding = "UTF-8", stringsAsFactors = FALSE)
+kable(head(inf_items))
+```
+
+
+Save to disk
+-----------
+
+```{r}
+write.csv(d_inf, "data_inference-task.csv", row.names = FALSE,
+          fileEncoding = "UTF-8")
+```
+
+
+
+Background information
+=======================
+
+Petrus:
+
+> Här finns information om deltagarnas ålder, kön, nivå i engelska och vistelse i engelskspråkigt land.
+>
+> började lära sig engelska vid ålder: 
+Här visas vid vilken ålder deltagarna började lära sig engelska genom formell undervisning.
+>
+> självuppskattad nivå i engelska:
+Här visas vilken nivå på en skala mellan 1 och 7 deltagarna själva ansåg att de låg på när det gällde generell nivå i engelska - 1 motsvarar väldigt låg och 7 väldigt hög (som en infödd).
+
+
+```{r}
+# Load and rename columns
+backgr <- read.csv("data-petrus/participant-background-info.csv", sep = ";",
+                      fileEncoding = "UTF-8", stringsAsFactors = FALSE)
+names(backgr) <- c("Subject", "Age", "Sex", "L2_start", "L2_self",
+                   "Months_L2_country", "LexTale")
+kable(head(backgr))
+```
+
+Save to disk:
+
+
+```{r}
+write.csv(backgr, "participant-background.csv", row.names = FALSE,
+          fileEncoding = "UTF-8")
+```
+
+
 
