@@ -428,25 +428,80 @@ kable(head(d_inf))
 Item data
 ---------
 
+Petrus's description:
+
+> - *InferencePattern*: Här visas slutledningsmönstret för varje slutledning. Totalt finns det 4 giltiga och 4 ogiltiga slutledningsmönster. Varje typ (t.ex. control) är utförda i var och en av dessa 8 slutledningsmönster.
+> - *Valid*: Här visas 1, om slutledningen är giltig, och 0 om den är ogiltig.
+> - *Item*: Denna kolumn anger namnet för den specifika slutledningen. Varje slutledning är unik, och upprepas alltså inte, vilket slutledningsmönstren gör.
+
+
+
 ```{r}
 # Load item data
-inf_items <- read.csv("data-petrus/inference-task_item-description.csv", sep = ";",
+inf_items <- read.csv("data-petrus/inference-task_item-description.csv", sep = ",",
                       fileEncoding = "UTF-8", stringsAsFactors = FALSE)
+names(inf_items)[1] <- "InferPattern"
+kable(head(inf_items))
+# For conistency, let's change the values of Language to L1/L2 rather than En/Sw:
+inf_items$Language <- ifelse(inf_items$Language == "En", "L2", "L1")
 kable(head(inf_items))
 ```
 
 
-Save to disk
+**Some sanity checks:**
+
+There should be 8 unique inference patterns:
+
+```{r}
+length(unique(inf_items$InferPattern))
+```
+
+Which are they?
+
+```{r}
+unique(inf_items$InferPattern)
+```
+
+
+Half of them should be valid inferences, the other half invalid:
+
+```{r}
+unique(inf_items[, c("InferPattern", "Valid")])
+```
+
+
+Do they occur equally often in each type and language?
+
+```{r}
+with(inf_items, table(InferPattern, Type, Language))
+```
+
+Yes, this looks all very good.
+
+
+
+
+
+
+Join info and save to disk
 -----------
 
 ```{r}
-write.csv(d_inf, "data_inference-task.csv", row.names = FALSE,
+# Note I first remove the Type column from d_inf, because it contains the
+# Swedish label ("kontroll" etc) rather than the English ones ("Control" etc.)
+d_inf_full <- left_join(d_inf %>% select(- Type), inf_items)
+head(d_inf_full)
+```
+
+
+```{r}
+write.csv(d_inf_full, "data_inference-task.csv", row.names = FALSE,
           fileEncoding = "UTF-8")
 ```
 
 
 
-Background information
+Participant background information
 =======================
 
 Petrus:
