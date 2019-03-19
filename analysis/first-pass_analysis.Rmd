@@ -1,0 +1,475 @@
+---
+title: "First-pass analyses"
+author: '[Guillermo Montero-Melis](https://www.mpi.nl/people/montero-melis-guillermo)'
+date: '`r as.character(format(Sys.Date(), format="%d/%m/%Y"))`'
+output:
+  html_document:
+    depth: 2
+    number_sections: yes
+    theme: default
+    toc: yes
+---
+
+
+Introduction
+============
+
+Carry out a first-pass analysis of the data in Petrus I.'s bachelor thesis to
+see if it is suitable to be written up as a study and submitted to a journal.
+
+Remarks:
+
+- The data has been pre-processed in a separate script (`data/process_data.Rmd`)
+- I will mostly try to replicate the analyses in Petrus's BA thesis with a few
+extensions; this means I largely follow the order of how the results are reported
+in that thesis
+
+
+Set up workspace
+================
+
+Libraries
+---------
+
+```{r setup, include=TRUE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+# library(tidyr)
+library(lme4)
+```
+
+
+Data
+----
+
+Matching task:
+
+```{r}
+# Matching task
+d_match <- read.csv("../data/data_matching-task.csv", fileEncoding = "UTF-8")
+head(d_match)
+```
+
+Form/category task:
+
+```{r}
+# form/category task -- two versions to choose from (uncomment/comment one)
+
+# # full version
+# d_fc <- read.csv("../data/data_form-category-task.csv", fileEncoding = "UTF-8")
+
+# cleaned version (see "~/data/process_data.Rmd" for details)
+d_fc <- read.csv("../data/data_form-category-task_cleaned.csv", fileEncoding = "UTF-8")
+
+head(d_fc)
+```
+
+
+Participant background data, including L2 English proficiency (LexTale):
+
+```{r}
+backgr <- read.csv("../data/participant-background.csv", fileEncoding = "UTF-8")
+head(backgr)
+```
+
+
+Inference task:
+
+```{r}
+d_infe <- read.csv("../data/data_inference-task.csv", fileEncoding = "UTF-8")
+head(d_infe)
+```
+
+
+
+Matching task
+=============
+
+The matching task was used to exclude items in the form/category task for those
+participants who could not match it correctly (assuming that their performance
+on such an item is uninformative if they don't know the meaning of the word).
+
+*NB*:
+This resulted in the "cleaned" dataset for the form/category task (see Data
+above).
+
+```{r}
+head(d_match)
+```
+
+How accurate were subjects on this task?
+
+```{r}
+d_match %>% group_by(Subject) %>% summarise(Acc = mean(Score)) %>%
+  ggplot(aes(x = Acc)) + geom_histogram() + ylim(0, 11)
+```
+
+We see that most were quite accurate.
+
+Another way to see that is to account the number of errors
+
+```{r}
+d_match$Error <- ifelse(d_match$Score == 1, 0, 1)
+d_match %>% group_by(Subject) %>% 
+  summarise(NbErrors = sum(Error)) %>%
+  group_by(NbErrors) %>%
+  summarise(Freq = n()) %>%
+  kable
+```
+
+
+Let's look at it from the point of view of the items:
+
+```{r, message = FALSE}
+d_match %>% group_by(TargetWord) %>% summarise(Acc = mean(Score)) %>%
+  ggplot(aes(x = Acc)) + geom_histogram()
+```
+
+There were some items that elicited a large number of errors, especially "hairspray":
+
+```{r}
+d_match %>% group_by(TargetWord) %>% 
+  summarise(NbErrors = sum(Error)) %>%
+  arrange(- NbErrors) %>%
+  print(n = 12)
+```
+
+
+
+
+
+Form- and category tasks
+=======================
+
+By-subject visualization
+------------------
+
+Summarize each participant's data as a single number, namely their mean
+accuracy (`Acc`) in each task and language:
+
+```{r}
+d_fc_subj <- d_fc %>% 
+  group_by(Subject, Task, Language) %>%
+  summarise(Acc = mean(Score))
+```
+
+Identify outliers (wrt to Tukey/ggplot2 boxplots):
+
+```{r}
+d_fc_subj <- d_fc %>% 
+  group_by(Subject, Task, Language) %>%
+  summarise(Acc = mean(Score))
+
+# To be able to plot the label names of outliers (SPSS does it by default), we
+# adapt the solution proposed in
+# https://stackoverflow.com/questions/33524669/labeling-outliers-of-boxplots-in-r
+is_outlier <- function(x) {
+  return(x < quantile(x, 0.25) - 1.5 * IQR(x) | x > quantile(x, 0.75) + 1.5 * IQR(x))
+}
+# Outlier contains a subject ID if they are an outlier for a task-language combo
+d_fc_subj <- d_fc_subj %>%
+  group_by(Task, Language) %>%
+  mutate(Outlier = ifelse(is_outlier(Acc), Subject, as.numeric(NA)))
+head(d_fc_subj)
+```
+
+
+
+```{r}
+
+ggplot(d_fc_subj, aes(x = Language, y = Acc)) +
+  geom_boxplot(outlier.shape = 4) +
+  geom_jitter(height = 0, alpha = .5, aes(colour = Language)) +
+  geom_text(aes(label = Outlier), na.rm = TRUE, hjust = -0.5, size = 4) +
+  facet_grid(. ~ Task) +
+  ylim(.5, 1) +
+  theme_bw()
+```
+
+
+
+
+By-item visualization
+------------------
+
+Summarize the data by items instead (but otherwise analogously as above):
+
+```{r}
+d_fc_item <- d_fc %>% 
+  group_by(ItemID, Task, Language) %>%
+  summarise(Acc = mean(Score))
+head(d_fc_item)
+```
+
+
+```{r}
+ggplot(d_fc_item, aes(x = Language, y = Acc)) +
+  geom_boxplot(outlier.shape = 4) +
+  geom_jitter(height = 0, alpha = .5, aes(colour = Language)) +
+  facet_grid(. ~ Task) +
+  ylim(.5, 1) +
+  theme_bw()
+
+```
+
+
+Generalized Linear Mixed Model (GLMM) analysis
+---------------------------------
+
+The hypothesis is that there should be an interaction between language and
+task, such that participants perform worse in the shape task when carrying
+it out in the L2, but their performance should not be worse in the category
+task.
+
+
+```{r}
+# Sum coding for factors
+# Task
+contrasts(d_fc$Task) <- contr.sum(2)
+colnames(contrasts(d_fc$Task)) <- "Categ_vs_Shape"
+contrasts(d_fc$Task)
+# Language
+contrasts(d_fc$Language) <- - contr.sum(2)
+colnames(contrasts(d_fc$Language)) <- "L2_vs_L1"
+contrasts(d_fc$Language)
+```
+
+
+```{r}
+# fail to converge...
+
+# fm_fc <- glmer(Score ~ Task * Language +
+#                  (Task * Language | Subject) +
+#                  (Task * Language | ItemID),
+#                data = d_fc,
+#                family = "binomial")
+
+# fm_fc <- glmer(Score ~ Task * Language +
+#                  (Task * Language | Subject) +
+#                  (Task + Language | ItemID),
+#                data = d_fc,
+#                family = "binomial")
+
+# The only model I can get to converge with any random slope by subjects:
+# fm_fc7 <- glmer(Score ~ Task * Language +
+#                   (1 + Task | Subject) +
+#                   (1 | ItemID),
+#                 data = d_fc,
+#                 family = "binomial")
+# summary(fm_fc7)
+```
+
+
+
+The role of L2 proficiency
+-------------------------
+
+
+### A quick look at proficiency
+
+We have a few measures of participants' L2 proficiency. The most direct and
+reliable one is probably their score on the [LexTale](http://www.lextale.com/)
+task. But let's compare them:
+
+```{r}
+ggpairs(backgr[, c(2, 4:7)], lower = list(continuous = "smooth"))
+```
+
+Nothing strongly stands out, but there are few remarks to make:
+
+- We see that the strongest correlatin is between self-rated L2 proficiency and
+the score on the LexTale test. This is what one would expect.
+- The scores on the LexTale gave a reasonable spread and roughly conform to a
+normal distribution
+
+Let's look at the LexTale scores:
+
+```{r}
+ggplot(backgr, aes(x = LexTale)) + geom_histogram(binwidth = .05)
+```
+
+
+### Correlation of proficiency and form/category task in L2
+
+
+```{r}
+# Subset form/category task data in L2 only:
+d_fc_l2 <- d_fc_subj %>% select(-Outlier) %>% filter(Language == "L2")
+# Add their proficiency scores:
+d_fc_l2 <- left_join(d_fc_l2, backgr %>% select(Subject, LexTale))
+```
+
+
+Plot:
+
+```{r}
+ggplot(d_fc_l2, aes(x = LexTale, y = Acc, colour = Task)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+So this seems to go well with our story:
+
+- L2 proficiency did not really predict their performance on the category task
+(which was close to ceiling anyway)
+- However, it did correlate with their performance on the *shape* task, as we
+expected
+
+
+Here are the corresponding Pearson correlation tests:
+
+```{r}
+by(d_fc_l2, d_fc_l2$Task, function(df) with(df, cor.test(Acc, LexTale)))
+```
+
+
+
+Inference task
+=============
+
+Accuracy
+--------
+
+We first look at accuracy:
+
+
+### By subject
+
+
+Summarize each participant's data as a single number, namely their mean
+accuracy (`Acc`) in each task and language:
+
+```{r}
+d_infe_subj <- d_infe %>% 
+  group_by(Subject, Language, Type) %>%
+  summarise(Acc = mean(Score))
+head(d_infe_subj)
+```
+
+
+```{r}
+ggplot(d_infe_subj, aes(x = Language, y = Acc)) +
+  geom_boxplot(outlier.shape = 4) +
+  geom_jitter(height = 0, alpha = .5, aes(colour = Language)) +
+  facet_grid(. ~ Type) +
+  ylim(0, 1) +
+  geom_hline(yintercept = .5, linetype = "dotted") +
+  theme_bw()
+```
+
+
+Let us see if either the valid or invalid inferences were more difficult:
+
+```{r, fig.height = 8}
+d_infe %>%
+  mutate(Val = ifelse(Valid == 1, "valid", "invalid")) %>%
+  group_by(Subject, Language, Type, Val) %>%
+  summarise(Acc = mean(Score)) %>%
+  ggplot(aes(x = Language, y = Acc)) +
+  geom_boxplot(outlier.shape = 4) +
+  geom_jitter(height = 0, alpha = .5, aes(colour = Language)) +
+  facet_grid(Type ~ Val) +
+  ylim(0, 1) +
+  geom_hline(yintercept = .5, linetype = "dotted") +
+  theme_bw()
+```
+
+There is actually not much evidence that invalid inferences are harder than
+valid ones, or the other way around.
+
+
+### By-item (i.e., by inference pattern)
+
+Let's do an analogous visualization but no grouping by inference pattern
+(`InferPattern`) rather than subject:
+
+```{r}
+d_infe_ite <- d_infe %>%
+  mutate(Val = ifelse(Valid == 1, "valid", "invalid")) %>%
+  group_by(InferPattern, Language, Type, Val) %>%
+  summarise(Acc = mean(Score))
+
+ggplot(d_infe_ite, aes(x = Language, y = Acc)) +
+  geom_boxplot(outlier.shape = 4) +
+  geom_jitter(height = 0, alpha = .5, aes(colour = Language)) +
+  facet_grid(. ~ Type) +
+  ylim(0, 1) +
+  geom_hline(yintercept = .5, linetype = "dotted") +
+  theme_bw()
+```
+
+Interestingly, there seems to be less variation in the items than in subjects.
+So all inference patterns were roughly equally hard.
+
+We can also colour the dots with regard to validity of the items, to see if
+we see some evidence now of valid vs invalid items having a different degree
+of difficulty:
+
+```{r}
+ggplot(d_infe_ite, aes(x = Language, y = Acc)) +
+  geom_boxplot(outlier.shape = 4) +
+  geom_jitter(height = 0, alpha = .5, aes(colour = Val)) +
+  facet_grid(. ~ Type) +
+  ylim(0, 1) +
+  geom_hline(yintercept = .5, linetype = "dotted") +
+  theme_bw()
+```
+
+
+We can make the comparison even more explicit, as we did above between subjects:
+
+```{r, fig.height = 8}
+ggplot(d_infe_ite, aes(x = Language, y = Acc)) +
+  geom_boxplot(outlier.shape = 4) +
+  geom_jitter(height = 0, alpha = .5, aes(colour = Language)) +
+  facet_grid(Type ~ Val) +
+  ylim(0, 1) +
+  geom_hline(yintercept = .5, linetype = "dotted") +
+  theme_bw()
+```
+
+Perhaps there is an indication that invalid inferences yielded slightly higher
+accuracies. This in turn could be due to participants having a slight bias
+towards rejecting the validity of inferences...
+
+**It would probably be a good idea to compute d' (*d-prime*) scores!**
+
+
+Response times
+-------------
+
+### General overview
+
+We need to get an idea of how the reading times were:
+How much dispersion was there within and between participants?
+
+```{r}
+# Compute by speaker averages for later plotting and add that to data frame
+mean_RT <- d_infe %>% group_by(Subject) %>% summarise(Mean_RT = mean(RT))
+d_infe <- left_join(d_infe, mean_RT)
+```
+
+
+```{r}
+# Order Subject levels according to Mean_RT
+d_infe$Subject <- factor(d_infe$Subject, levels = mean_RT$Subject[order(mean_RT$Mean_RT)])
+```
+
+
+```{r, fig.height=10}
+ggplot(d_infe, aes(x = Language, y = RT)) +
+  geom_boxplot() +
+  facet_wrap(~ Subject) +
+  theme_bw()
+```
+
+
+
+
+### By subject
+
+
+### By item
