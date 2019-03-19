@@ -61,6 +61,8 @@ files into CSV). Remove them:
 d_fc <- d_fc %>%
   select(Subject, Task, Language = Lang., Trial, Score, ItemID = Item, 
          Comment = notes)
+# ... and change level names for Task to English:
+d_fc$Task <- ifelse(d_fc$Task == "form", "Shape", "Category")
 kable(head(d_fc))
 ```
 
@@ -95,6 +97,7 @@ sum(with(d_fc, table(Task, ItemID, Language)) != 24)
 Again, everything is balanced and there is no missing data.
 
 
+
 Item data
 ---------
 
@@ -109,6 +112,8 @@ head(fc_items)
 # Rename columns so they match the trial-level data
 fc_items <- fc_items %>% rename(Task = uppgift, Language = språk, ItemID = item,
                                 Descr = beskrivning)
+# ... and change level names for Task to English:
+fc_items$Task <- ifelse(fc_items$Task == "form", "Shape", "Category")
 kable(head(fc_items))
 ```
 
@@ -151,7 +156,7 @@ within a language but across tasks:
 fc_items_w <- fc_items %>%
   spread(Task, Descr)
 # Create variable to compare the two columns
-fc_items_w$SameDescr <- with(fc_items_w, form == kategori)
+fc_items_w$SameDescr <- with(fc_items_w, Shape == Category)
 # Show all items that are *not* the same
 kable(fc_items_w[! fc_items_w$SameDescr, ])
 ```
@@ -227,7 +232,7 @@ imagine that I accidentally shuffle rows 1 and 2. It would look like Subject 1
 first did the category and then the shape task (in English), and there would
 be nothing in the data frame to help me discover this error.
 
-So to remedy this, let's start by emplicitly encoding the task order:
+So to remedy this, let's start by explicitly encoding the task order:
 
 ```{r}
 fc_order$TaskOrder <- 1:4
@@ -287,20 +292,118 @@ kable(head(d_fc_full))
 ```
 
 
-Save to disk
------------
 
-Before saving, change level names to English:
+Trial-level data -- cleaned data set
+----------------------------
+
+Above we have worked with the data set that contains all trials.
+But Petrus also provides the following "cleaned" data set:
+
+> **Formuppgift cleaned data set**:
+> Här har de prövningar (*trials*) på L2 som innehåller ord som deltagarna
+matchade med fel bild tagits bort. Deltagarna fick i uppgift att matcha alla
+de engelska ord som ingick i formuppgiften med bilder av dem. Uppgiften
+genomfördes på en laptop. Jag antar att en deltagare inte kan visualisera sig
+ett ord som hen inte förstår, och utgår från att felmatchning beror på att
+deltagaren inte förstår ordet i fråga.
+
+Load the data as provided by Petrus, which looks in form very similar to the
+trial-level data above, but it is lacking some of the variables:
 
 ```{r}
-d_fc_full$Task <- ifelse(d_fc_full$Task == "form", "Shape", "Category")
+# d(ata) for f(orm) and c(ategory) task clean(ed)
+d_fc_clean <- read.csv("data-petrus/form-category-task_trial-level-data_cleaned.csv",
+                       sep = ",", fileEncoding = "UTF-8", stringsAsFactors = FALSE) %>%
+  select(Subject, Task, Language = Lang., Trial, Score)
+# ... and change level names for Task to English:
+d_fc_clean$Task <- ifelse(d_fc_clean$Task == "form", "Shape", "Category")
+kable(head(d_fc_clean))
 ```
 
+Add all the columns that are missing (i.e., they are in `d_fc_full` but not
+in `d_fc_clean`). We can add them with `left_join`:
+
+```{r}
+d_fc_clean <- left_join(d_fc_clean, d_fc_full)
+kable(head(d_fc_clean))
+```
+
+
+Repeat some **sanity checks** (as above)
+
+Number of subjects (unique Subject ID's):
+`r length(unique(d_fc_clean$Subject))`
+
+How many data points using different cross-tabulations:
+
+```{r}
+with(d_fc_clean, table(Task, Subject, Language))
+```
+
+Indeed, now we can see that while the L1 version of the tasks are still complete,
+some data points are missing for the L2 version.
+
+How many values are there in the table above that are not equal to 24?
+
+```{r}
+sum(with(d_fc_clean, table(Task, Subject, Language)) != 24)
+```
+
+How many observations have we lost by speaker?
+
+```{r}
+d_fc_clean %>%
+  group_by(Subject) %>%
+  summarise(NbObservations = n()) %>%
+  arrange(NbObservations) %>%
+  print(n = 16)
+```
+
+We can see that 15 participants have lost some data in this way. The table
+above shows the participant with most data loss at the top. A full data set by
+subject corresponds to 96 observations
+
+
+We can look at the same thing from the point of view of the items:
+
+```{r}
+with(d_fc_clean, table(Task, ItemID, Language))
+```
+
+It is slightly odd that items are not always removed pairwise. For instance,
+for Language = L2, there is one more missing observation for Item 7 in the
+category than in the shape task. Is this correct?
+
+We can order the items by number of observations:
+
+```{r}
+d_fc_clean %>%
+  group_by(ItemID) %>%
+  summarise(NbObservations = n()) %>%
+  arrange(NbObservations) %>%
+  print(n = 17)
+```
+
+This shows that the errors in the matching task affected some of the items
+more severely than others. The two items that were removed most often were:
+
+```{r}
+fc_items[with(fc_items, ItemID %in% c(16, 7) & Language == "L2"), ]
+```
+
+
+
+Save to disk
+-----------
 
 Save to disk:
 
 ```{r}
+# full data set
 write.csv(d_fc_full, "data_form-category-task.csv", row.names = FALSE,
+          fileEncoding = "UTF-8")
+# cleaned data set
+write.csv(d_fc_clean, "data_form-category-task_cleaned.csv", row.names = FALSE,
           fileEncoding = "UTF-8")
 ```
 
