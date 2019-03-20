@@ -37,7 +37,7 @@ library(knitr)
 library(dplyr)
 library(ggplot2)
 library(GGally)
-# library(tidyr)
+library(tidyr)
 library(lme4)
 ```
 
@@ -443,19 +443,18 @@ Response times
 
 ### General overview
 
-We need to get an idea of how the reading times were:
-How much dispersion was there within and between participants?
+First we need to get an idea of how response times (RTs) were distributed:
+How much dispersion was there within and between participants? Were the
+distributions very skewed?
 
 ```{r}
 # Compute by speaker averages for later plotting and add that to data frame
-mean_RT <- d_infe %>% group_by(Subject) %>% summarise(Mean_RT = mean(RT))
+mean_RT <- d_infe %>% group_by(Subject) %>% 
+  summarise(Mean_RT = mean(RT),
+            Median_RT = median(RT))
 d_infe <- left_join(d_infe, mean_RT)
-```
-
-
-```{r}
-# Order Subject levels according to Mean_RT
-d_infe$Subject <- factor(d_infe$Subject, levels = mean_RT$Subject[order(mean_RT$Mean_RT)])
+# Order Subject levels according to Median_RT
+d_infe$Subject <- factor(d_infe$Subject, levels = mean_RT$Subject[order(mean_RT$Median_RT)])
 ```
 
 
@@ -463,13 +462,487 @@ d_infe$Subject <- factor(d_infe$Subject, levels = mean_RT$Subject[order(mean_RT$
 ggplot(d_infe, aes(x = Language, y = RT)) +
   geom_boxplot() +
   facet_wrap(~ Subject) +
+  geom_hline(aes(yintercept = Mean_RT), linetype = "dotted", colour = "red") +
+  geom_hline(aes(yintercept = Median_RT), linetype = "dashed", colour = "blue") +
   theme_bw()
+```
+
+This plot is not very useful because some extreme observations compress most of
+the data to the bottom of the plots.
+
+Here is a data summary:
+
+```{r}
+summary(d_infe$RT)
+```
+
+While 75% of the data are RT < `r summary(d_infe$RT)[5]`, extreme observations
+go above 20 seconds!
+
+Let us just plot the data again but now cutting out observations above 10:
+
+```{r, fig.height=10}
+ggplot(d_infe, aes(x = Language, y = RT)) +
+  geom_boxplot() +
+  facet_wrap(~ Subject) +
+  geom_hline(aes(yintercept = Mean_RT), linetype = "dotted", colour = "red") +
+  geom_hline(aes(yintercept = Median_RT), linetype = "dashed", colour = "blue") +
+  ylim(-0.5, 10) +
+  theme_bw()
+```
+
+Now we get a much better sense of the data. Some notes about the plot here above:
+
+- The data for each subject is plotted in a separate panel, with L1 data plotted
+on the left and L2 data on the right
+- Subjects are ordered from fastest to slowest based on their *median* response
+time
+- Each subject's median is plotted as a blue dashed line; each subject's mean as
+a red dotted line. (These lines are close for subjects with RTs roughly normally
+distributed)
+- Note that for the slowest participants the plots are slightly misleading because
+the whiskers are cut off (e.g., participant 14, compare the plot directly here
+above with the first that was presented)
+
+
+### Correct vs incorrect trials
+
+In the previous section, we looked at all the trials, independent of whether
+participants' responses were correct or not. However, Knauff and May (2006)
+removed incorrect trials from the RT analyses, and so did Petrus. This is
+standard practice and it actually makes sense because one may wonder if subjects
+were even paying attention on incorrect trials.
+
+First, let's see RTs as a function of response accuracy:
+
+```{r}
+ggplot(d_infe, aes(x = factor(Score), y = RT)) +
+  geom_boxplot() +
+  facet_grid(. ~ Language)
+```
+
+Indeed, in both L1 and L2 there is a tendency for incorrect trials to be
+associated to longer RTs:
+
+```{r}
+d_infe %>% group_by(Language, Score) %>% 
+  summarise(Mean_RT = mean(RT), SD_RT = sd(RT)) %>%
+  kable
+```
+
+Yes, the mean effect is indeed quite substantial: incorrect responses yield
+roughly 1.5 seconds longer RTs.
+
+
+### Data loss when removing incorrect trials
+
+How many observations will be removed?
+
+```{r}
+table(d_infe$Score)
+```
+
+This amounts to `r round(100 * table(d_infe$Score)[1] / nrow(d_infe), 1)`%
+of the data.
+
+Of interest is to see how much that will affect particular participants and
+particular items:
+
+#### Participants:
+
+```{r}
+d_infe %>%
+  mutate(Error = ifelse(Score == 0, 1, 0)) %>%
+  group_by(Subject) %>%
+  summarise(nbErrors = sum(Error), nbObs = n()) %>%
+  mutate(dataLossPerc = round(100 * nbErrors / nbObs)) %>%
+  arrange(-nbErrors) %>%
+  select(Subject, nbErrors, dataLossPerc) %>%
+  print(n = 24)
+```
+
+For some participants (e.g., 23 or 22) data loss is quite substantial.
+
+We can actually break it down by Language to see if some cases become even more
+extreme then:
+
+```{r}
+d_infe %>%
+  mutate(Error = ifelse(Score == 0, 1, 0)) %>%
+  group_by(Subject, Language) %>%
+  summarise(nbErrors = sum(Error), nbObs = n()) %>%
+  mutate(dataLossPerc = round(100 * nbErrors / nbObs)) %>%
+  arrange(-nbErrors) %>%
+  select(Subject, Language, nbErrors, dataLossPerc)
+```
+
+The picture does not change radically.
+
+In any case, it makes sense to exclude incorrect trials from further analysis:
+
+```{r}
+d_infe_corr <- d_infe %>% filter(Score == 1)
+```
+
+
+#### Items (inference patterns):
+
+```{r}
+d_infe %>%
+  mutate(Error = ifelse(Score == 0, 1, 0)) %>%
+  group_by(InferPattern, Type) %>%
+  summarise(nbErrors = sum(Error), nbObs = n()) %>%
+  mutate(dataLossPerc = round(100 * nbErrors / nbObs)) %>%
+  arrange(-nbErrors) %>%
+  select(InferPattern, nbErrors, dataLossPerc)
+```
+
+The differences in accuracy between items / inference patterns are not as
+pronounced as between subjects.
+
+### Exclude incorrect trials
+
+In any case, it makes sense to exclude incorrect trials from further analysis:
+
+```{r}
+d_infe_corr <- d_infe %>% filter(Score == 1)
 ```
 
 
 
 
+
+### Log-transorm the data to avoid the strong right-skew?
+
+If we look at the raw RTs data as a whole, we see that it is strongly
+right-skewed:
+
+```{r}
+# Following
+# http://www.cookbook-r.com/Graphs/Plotting_distributions_(ggplot2)/
+ggplot(d_infe_corr, aes(x = RT)) + 
+  geom_histogram(aes(y=..density..),  # Histogram with density instead of count on y-axis
+                 binwidth=.5, colour="black", fill="white") +
+  geom_density(alpha=.2, fill="#FF6666")  # Overlay with transparent density plot
+```
+
+In situations like this, taking the log of the DV can be helpful:
+
+
+```{r}
+# Because log of negative number is not defined, we somewhat arbitrarily add
+# 0.5 to all RTs (just a shift in scale) to make them all positive:
+d_infe_corr$logRT <- log(d_infe_corr$RT + 0.5)
+ggplot(d_infe_corr, aes(x = logRT)) + 
+  geom_histogram(aes(y=..density..),  # Histogram with density instead of count on y-axis
+                 binwidth=.5, colour="black", fill="white") +
+  geom_density(alpha=.2, fill="#FF6666")  # Overlay with transparent density plot
+```
+
+The distribution of `logRT`s is much less skewed, although we might now
+observe a slight left-skew instead. Note that this transformation is a
+monotonically increasing function, so the order of the observations is
+preserved.
+
+Let us look at the same plot of by-subject observations as above, but
+now using the log-transformed RT data.
+
+```{r}
+# Compute by speaker averages and medians for logRT
+mean_logRT <- d_infe_corr %>% group_by(Subject) %>% 
+  summarise(Mean_logRT = mean(logRT),
+            Median_logRT = median(logRT))
+d_infe_corr <- left_join(d_infe_corr, mean_logRT)
+# Order Subject levels according to Median_logRT now
+d_infe_corr$Subject <- factor(
+  d_infe_corr$Subject, 
+  levels = mean_logRT$Subject[order(mean_logRT$Median_logRT)]
+  )
+```
+
+
+```{r, fig.height=10}
+ggplot(d_infe_corr, aes(x = Language, y = logRT)) +
+  geom_boxplot() +
+  facet_wrap(~ Subject) +
+  geom_hline(aes(yintercept = Mean_logRT), linetype = "dotted", colour = "red") +
+  geom_hline(aes(yintercept = Median_logRT), linetype = "dashed", colour = "blue") +
+  theme_bw()
+```
+
+Under the log transformation, the problem of removing outliers, which always
+involves arbitrary cutoffs, is largely avoided.
+
+**We will therefore proceed with log-transformed data for now. Later, however, we will re-run the analyses using the approach adopted by Knauff & May (2006)**,
+which is also what Petrus did in his follow-up analysis.
+
+A note on the interpretation of log-RTs in regression analysis:
+
+There is a different assumption underlying the choice of whether to analyze the
+dependent variable reaction time as raw scores or on a logarithmic scale.
+The assumption has to do with how one believes the manipulations to be related
+to the DV. Taking raw RTs assumes that the effect of the predictor on the DV will
+be linear, i.e. a regression coefficient of 2 would indicate that RTs increase
+by adding 2 for any unit you move on the predictor. However, if you model the
+DV as logRT, we assume that the effect is multiplicative. This means that a
+regression coefficient of 2 indicates that RTs are *multiplied* by 2.
+
+This is important to keep in mind for the analyses.
+
+
 ### By subject
 
 
-### By item
+```{r}
+# Summarize RTs by subject
+rt_subj <- d_infe_corr %>%
+  group_by(Subject, Language, Type) %>%
+  summarise(logRT = mean(logRT))
+head(rt_subj, 7)
+```
+
+
+```{r}
+ggplot(rt_subj, aes(x = Language, y = logRT, colour = Language)) +
+  geom_boxplot() +
+  facet_grid(. ~ Type)
+```
+
+Indeed, the data at least numerically show the expected tendency:
+The visual type of inferences were more demanding in the L1 than in the L2.
+
+Perhaps a more insightful plot is one that is created by plotting per-cell
+means and 95% confidence intervals (assuming normality, i.e. +/- 2 SE).
+
+```{r}
+sem_fun <- function(x) sd(x) / sqrt(length(x))
+rt_subj_summ <- rt_subj %>%
+  group_by(Language, Type) %>%
+  summarise(M = mean(logRT), SE = sem_fun(logRT))
+rt_subj_summ
+```
+
+First, just means and 95% confidence intervals:
+
+```{r}
+ggplot(rt_subj_summ, aes(x = Language, y = M, colour = Language)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = M - 1.96 * SE, ymax = M + 1.96 * SE), width = .25,
+                size = 1) +
+  facet_grid(. ~ Type) +
+  theme_bw()
+```
+
+But we can also overlay the individual subject means to get a better idea of
+the dispersion in the data.
+
+```{r}
+ggplot(rt_subj_summ, aes(x = Language, y = M)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = M - 1.96 * SE, ymax = M + 1.96 * SE), width = .25,
+                size = 1) +
+  geom_jitter(data = rt_subj, aes(y = logRT, colour = Language), height = 0, 
+              alpha = .4) +
+  facet_grid(. ~ Type) +
+  theme_bw()
+```
+
+
+We can add a little bit more of information to the graph by connecting
+observations from the same speaker in the different languages. This basically
+shows individual by-subject slopes (as will later be captured by the random
+effects in linear mixed model, LMM).
+
+```{r}
+ggplot(rt_subj_summ, aes(x = Language, y = M)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = M - 1.96 * SE, ymax = M + 1.96 * SE), width = .25,
+                size = 1) +
+  geom_jitter(data = rt_subj, aes(y = logRT, colour = Language), height = 0, 
+              alpha = .4) +
+  geom_line(data = rt_subj, aes(y = logRT, group = Subject), alpha = .3) +
+  facet_grid(. ~ Type) +
+  theme_bw()
+```
+
+
+
+### LMM analysis
+
+Appropriate coding for factors:
+
+
+```{r}
+# Sum coding for Language
+contrasts(d_infe_corr$Language) <- - contr.sum(2)
+colnames(contrasts(d_infe_corr$Language)) <- "L2_vs_L1"
+contrasts(d_infe_corr$Language)
+
+# Type, with 2 possibilities
+# 1) Helmert coding
+contrasts(d_infe_corr$Type) <- contr.helmert(3)
+colnames(contrasts(d_infe_corr$Type)) <- c("Spat_vs_Cont", "Visual_vs_rest")
+contrasts(d_infe_corr$Type)
+contrasts(d_infe_corr$Language)
+# # 2) Treatment/dummy coding
+# d_infe_corr$Type <- factor(d_infe_corr$Type, 
+#                            levels = c( "Visual", "Control", "Visuospatial"))
+# contrasts(d_infe_corr$Type) <- contr.treatment(3)
+# colnames(contrasts(d_infe_corr$Type)) <- c("Contr-vs-Visu", "Spat-vs-Visu")
+# contrasts(d_infe_corr$Type)
+```
+
+
+Run the models (or comment them as they take a long time)
+
+```{r}
+# # Model with critical interaction
+# fm_RT <- lmer(logRT ~ Language * Type +
+#                 (1 + Language * Type | Subject) +
+#                 (1 + Language * Type | InferPattern),
+#               data = d_infe_corr, REML = FALSE)
+# summary(fm_RT)
+# # Model WITHOUT critical interaction
+# fm_RT_nointeract <- lmer(logRT ~ Language + Type +
+#                            (1 + Language * Type | Subject) +
+#                            (1 + Language * Type | InferPattern),
+#                          data = d_infe_corr, REML = FALSE)
+# summary(fm_RT_nointeract)
+```
+
+The interaction of Type and Language does not come out as significant in a
+LRT:
+
+```{r}
+# anova(fm_RT, fm_RT_nointeract)
+```
+
+```
+> anova(fm_RT, fm_RT_nointeract)
+Data: d_infe_corr
+Models:
+fm_RT_nointeract: logRT ~ Language + Type + (1 + Language * Type | Subject) + (1 + 
+fm_RT_nointeract:     Language * Type | InferPattern)
+fm_RT: logRT ~ Language * Type + (1 + Language * Type | Subject) + (1 + 
+fm_RT:     Language * Type | InferPattern)
+                 Df    AIC    BIC  logLik deviance  Chisq Chi Df Pr(>Chisq)
+fm_RT_nointeract 47 1521.7 1751.1 -713.82   1427.7                         
+fm_RT            49 1523.1 1762.3 -712.54   1425.1 2.5616      2     0.2778
+```
+
+Here's the model output for the model with the interaction:
+
+```
+> summary(fm_RT)
+Linear mixed model fit by maximum likelihood  ['lmerMod']
+Formula: logRT ~ Language * Type + (1 + Language * Type | Subject) + (1 +      Language * Type | InferPattern)
+   Data: d_infe_corr
+
+     AIC      BIC   logLik deviance df.resid 
+  1523.1   1762.3   -712.5   1425.1      925 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-3.5047 -0.6103 -0.1109  0.4601  4.3374 
+
+Random effects:
+ Groups       Name                                Variance  Std.Dev. Corr                         
+ Subject      (Intercept)                         0.1381110 0.37163                               
+              LanguageL2_vs_L1                    0.0171943 0.13113  -0.48                        
+              TypeSpat_vs_Cont                    0.0050948 0.07138   0.12 -0.21                  
+              TypeVisual_vs_rest                  0.0016607 0.04075  -0.34 -0.35  0.23            
+              LanguageL2_vs_L1:TypeSpat_vs_Cont   0.0041746 0.06461   0.55 -0.37 -0.70 -0.39      
+              LanguageL2_vs_L1:TypeVisual_vs_rest 0.0009023 0.03004   0.41 -0.78  0.17  0.69  0.19
+ InferPattern (Intercept)                         0.0007861 0.02804                               
+              LanguageL2_vs_L1                    0.0026117 0.05111   0.50                        
+              TypeSpat_vs_Cont                    0.0023259 0.04823  -0.66  0.13                  
+              TypeVisual_vs_rest                  0.0002836 0.01684  -0.58  0.38  0.93            
+              LanguageL2_vs_L1:TypeSpat_vs_Cont   0.0011324 0.03365   0.47 -0.44 -0.94 -0.98      
+              LanguageL2_vs_L1:TypeVisual_vs_rest 0.0006039 0.02458   0.56 -0.07 -0.19 -0.45  0.27
+ Residual                                         0.2157622 0.46450                               
+Number of obs: 974, groups:  Subject, 24; InferPattern, 8
+
+Fixed effects:
+                                      Estimate Std. Error t value
+(Intercept)                          0.8523357  0.0779858  10.929
+LanguageL2_vs_L1                    -0.0650490  0.0356519  -1.825
+TypeSpat_vs_Cont                    -0.0443093  0.0290458  -1.525
+TypeVisual_vs_rest                   0.0002383  0.0147207   0.016
+LanguageL2_vs_L1:TypeSpat_vs_Cont    0.0193417  0.0256148   0.755
+LanguageL2_vs_L1:TypeVisual_vs_rest  0.0222186  0.0149935   1.482
+
+Correlation of Fixed Effects:
+            (Intr) LnL2__L1 TyS__C TypV__ LL2__L1:TS
+LnggL2_v_L1 -0.323                                  
+TypSpt_vs_C  0.009 -0.044                           
+TypVsl_vs_r -0.219 -0.066    0.288                  
+LL2__L1:TS_  0.304 -0.246   -0.455 -0.296           
+LL2__L1:TV_  0.208 -0.262   -0.029  0.052  0.113    
+convergence code: 0
+singular fit
+```
+
+### A somewhat indirect subject analysis
+
+One could also see if there is a correlation between how proficient speakers
+are in their L2 and how much of a "penalty" they pay for doing the inferences
+of the visual type.
+
+The idea would here be that the lower your L2 proficiency is, the bigger
+the difference should be between how fast you are answering these inferences
+in your L1 and L2, and crucially, the relation should be as follows:
+
+**Prediction**:
+
+With lower L2 proficiency, the difference between RTs in the L1 and L2 for
+visual inferences should be greater (with an advantage in L2); with higher
+proficiency, the difference in RTs should be reduced or even zero.
+
+Let us compute, for each subject, the difference in their L1/L2 RTs for visual
+items:
+
+```{r}
+RTs_proficiency <- d_infe_corr %>%
+  filter(Type == "Visual") %>%
+  group_by(Subject, Language) %>%
+  summarise(M = mean(logRT)) %>%
+  # From long to wide
+  spread(Language, M) %>%
+  # compute difference
+  mutate(L1_minus_L2 = L1 - L2) %>%
+  # Join with information about proficiency and accuracy in the shape task
+  left_join(d_fc_l2 %>%
+              ungroup() %>%
+              mutate(Subject = as.character(Subject)) %>% 
+              filter(Task == "Shape") %>% 
+              select(Subject, Acc, LexTale))
+head(RTs_proficiency)
+```
+
+```{r}
+ggplot(RTs_proficiency, aes(x = LexTale, y = L1_minus_L2)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+Pearson correlation test
+
+```{r}
+with(RTs_proficiency, cor.test(L1_minus_L2, LexTale))
+```
+
+
+What about the accuracy?
+
+```{r}
+ggplot(RTs_proficiency, aes(x = Acc, y = L1_minus_L2)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+
+Nahh...
+
+
+
+
