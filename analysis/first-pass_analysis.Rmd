@@ -8,6 +8,8 @@ output:
     number_sections: yes
     theme: default
     toc: yes
+  pdf_document:
+    toc: yes
 ---
 
 
@@ -464,6 +466,7 @@ ggplot(d_infe, aes(x = Language, y = RT)) +
   facet_wrap(~ Subject) +
   geom_hline(aes(yintercept = Mean_RT), linetype = "dotted", colour = "red") +
   geom_hline(aes(yintercept = Median_RT), linetype = "dashed", colour = "blue") +
+  ggtitle("Raw Response Times (no outliers removed)") +
   theme_bw()
 ```
 
@@ -488,6 +491,7 @@ ggplot(d_infe, aes(x = Language, y = RT)) +
   geom_hline(aes(yintercept = Mean_RT), linetype = "dotted", colour = "red") +
   geom_hline(aes(yintercept = Median_RT), linetype = "dashed", colour = "blue") +
   ylim(-0.5, 10) +
+  ggtitle("Raw Response Times: only RTs < 10 s") +
   theme_bw()
 ```
 
@@ -635,9 +639,10 @@ In situations like this, taking the log of the DV can be helpful:
 d_infe_corr$logRT <- log(d_infe_corr$RT + 0.5)
 ggplot(d_infe_corr, aes(x = logRT)) + 
   geom_histogram(aes(y=..density..),  # Histogram with density instead of count on y-axis
-                 binwidth=.5, colour="black", fill="white") +
+                 colour="black", fill="white") +
   geom_density(alpha=.2, fill="#FF6666")  # Overlay with transparent density plot
 ```
+
 
 The distribution of `logRT`s is much less skewed, although we might now
 observe a slight left-skew instead. Note that this transformation is a
@@ -667,7 +672,8 @@ ggplot(d_infe_corr, aes(x = Language, y = logRT)) +
   facet_wrap(~ Subject) +
   geom_hline(aes(yintercept = Mean_logRT), linetype = "dotted", colour = "red") +
   geom_hline(aes(yintercept = Median_logRT), linetype = "dashed", colour = "blue") +
-  theme_bw()
+  ggtitle("Log-transformed Response Times (no observations removed)") +
+theme_bw()
 ```
 
 Under the log transformation, the problem of removing outliers, which always
@@ -944,5 +950,266 @@ ggplot(RTs_proficiency, aes(x = Acc, y = L1_minus_L2)) +
 Nahh...
 
 
+```{r}
+with(RTs_proficiency, cor.test(L1_minus_L2, Acc))
+```
 
 
+
+### Analysis replacing outliers (as done by Knauff & May, 2006)
+
+
+Knauff and May (2006) do not log-transform RTs. Instead they replace outliers
+with a certain cutoff value. Petrus in his thesis adopts the same approach
+in his follow-up analysis. This is described on p. 15-16 of his thesis (see
+`190107_isaksson_uppsats_slutv.pdf`).
+
+Here is how the procedure is described by Petrus:
+
+> Ett medelvärde räknades alltså ut för varje betingelse (här språk-typ) och
+de responstider som låg utanför avskärningspunkten för betingelsen -– "the 
+cut-off of the condition” –- ersattes med detta värde. [...] Värdet för
+avskärningspunkten refererar alltså här till (2(SD) + medel) för respektive
+betingelse.
+
+I follow this approach and then carry out the same visualizations as above.
+I try to be explicit at each step so that it becomes easy to discover if
+I have done something differently to Petrus.
+
+
+#### Trimming the observations
+
+```{r}
+# Compute mean and SD of all RTs in each of the cells given by the six
+# Language-Type combinations:
+RT_cutoff <- d_infe_corr %>%
+  group_by(Language, Type) %>%
+  summarise(M = mean(RT), SD = sd(RT))
+head(RT_cutoff)
+# Based on this we compute the upper and lower cutoff points:
+RT_cutoff <- RT_cutoff %>%
+  mutate(lower_cutoff = M - 2 * SD, upper_cutoff = M + 2 * SD)
+head(RT_cutoff)
+```
+
+First we can see that no observations falls *below* any of the lower cutoff points,
+since the lowers RT is `r round(min(d_infe_corr$RT), 2)`.
+So we need only to worry about observations higher than the upper cutoff points.
+
+```{r}
+# add the upper cutoff points to the data set:
+d_infe_corr <- left_join(d_infe_corr, 
+                         RT_cutoff %>% select(Language, Type, upper_cutoff))
+head(d_infe_corr)
+# Add column containing RTs or cutoff points for outliers
+d_infe_corr <- d_infe_corr %>%
+  mutate(
+    # Replaces outliers with cutoffs
+    RT_trimmed = ifelse(RT <= upper_cutoff, RT, upper_cutoff),
+    # Indicator variable to keep track of trimmed responses
+    Trimmed = ifelse(RT <= upper_cutoff, 0, 1)
+    )
+head(d_infe_corr)
+```
+
+We should of course also ask ourselves how many observations we are trimming
+in this way:
+
+```{r}
+d_infe_corr %>%
+  group_by(Language, Type) %>%
+  summarise(NbTrimmed = sum(Trimmed))
+```
+
+Not that many: `r sum(d_infe_corr$Trimmed)` trimmed observations in total.
+
+Finally, let's look at the distribution of data after trimming. Of course,
+the effect has been to cut off the long right tail of the distribution, while
+at the same time inflating the density for observations close to the cutoff
+(i.e., around 7 seconds):
+
+```{r}
+ggplot(d_infe_corr, aes(x = RT_trimmed)) + 
+  geom_histogram(aes(y=..density..),  # Histogram with density instead of count on y-axis
+                 binwidth=.5, colour="black", fill="white") +
+  geom_density(alpha=.2, fill="#FF6666")  # Overlay with transparent density plot
+```
+
+
+#### Repeat analyses above
+
+
+##### By subject
+
+
+```{r}
+# Summarize RTs by subject
+rt_subj <- d_infe_corr %>%
+  group_by(Subject, Language, Type) %>%
+  summarise(RT_trimmed = mean(RT_trimmed))
+head(rt_subj, 7)
+```
+
+
+```{r}
+ggplot(rt_subj, aes(x = Language, y = RT_trimmed, colour = Language)) +
+  geom_boxplot() +
+  facet_grid(. ~ Type)
+```
+
+Indeed, the data at least numerically show the expected tendency:
+The visual type of inferences were more demanding in the L1 than in the L2.
+
+Perhaps a more insightful plot is one that is created by plotting per-cell
+means and 95% confidence intervals (assuming normality, i.e. +/- 2 SE).
+
+```{r}
+rt_subj_summ <- rt_subj %>%
+  group_by(Language, Type) %>%
+  summarise(M = mean(RT_trimmed), SE = sem_fun(RT_trimmed))
+rt_subj_summ
+```
+
+First, just means and 95% confidence intervals:
+
+```{r}
+ggplot(rt_subj_summ, aes(x = Language, y = M, colour = Language)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = M - 1.96 * SE, ymax = M + 1.96 * SE), width = .25,
+                size = 1) +
+  facet_grid(. ~ Type) +
+  theme_bw()
+```
+
+But we can also overlay the individual subject means to get a better idea of
+the dispersion in the data.
+
+```{r}
+ggplot(rt_subj_summ, aes(x = Language, y = M)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = M - 1.96 * SE, ymax = M + 1.96 * SE), width = .25,
+                size = 1) +
+  geom_jitter(data = rt_subj, aes(y = RT_trimmed, colour = Language), height = 0, 
+              alpha = .4) +
+  facet_grid(. ~ Type) +
+  theme_bw()
+```
+
+
+We can add a little bit more of information to the graph by connecting
+observations from the same speaker in the different languages. This basically
+shows individual by-subject slopes (as will later be captured by the random
+effects in linear mixed model, LMM).
+
+```{r}
+ggplot(rt_subj_summ, aes(x = Language, y = M)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = M - 1.96 * SE, ymax = M + 1.96 * SE), width = .25,
+                size = 1) +
+  geom_jitter(data = rt_subj, aes(y = RT_trimmed, colour = Language), height = 0, 
+              alpha = .4) +
+  geom_line(data = rt_subj, aes(y = RT_trimmed, group = Subject), alpha = .3) +
+  facet_grid(. ~ Type) +
+  theme_bw()
+```
+
+
+
+##### LMM analysis
+
+Appropriate coding for factors: see section
+*Inference Task > Response times > LMM analysis*
+above.
+
+Run the models (or comment them as they take a long time)
+
+```{r}
+# # Model with critical interaction
+# fm_RT_trimmed <- lmer(RT_trimmed ~ Language * Type +
+#                 (1 + Language * Type | Subject) +
+#                 (1 + Language * Type | InferPattern),
+#               data = d_infe_corr, REML = FALSE)
+# summary(fm_RT_trimmed)
+# # Model WITHOUT critical interaction
+# fm_RT_trimmed_nointeract <- lmer(RT_trimmed ~ Language + Type +
+#                            (1 + Language * Type | Subject) +
+#                            (1 + Language * Type | InferPattern),
+#                          data = d_infe_corr, REML = FALSE)
+# summary(fm_RT_trimmed_nointeract)
+```
+
+The interaction of Type and Language does not come out as significant in a
+LRT:
+
+```{r}
+# anova(fm_RT_trimmed, fm_RT_trimmed_nointeract)
+```
+
+```
+> anova(fm_RT_trimmed, fm_RT_trimmed_nointeract)
+Data: d_infe_corr
+Models:
+fm_RT_trimmed_nointeract: RT_trimmed ~ Language + Type + (1 + Language * Type | Subject) + 
+fm_RT_trimmed_nointeract:     (1 + Language * Type | InferPattern)
+fm_RT_trimmed: RT_trimmed ~ Language * Type + (1 + Language * Type | Subject) + 
+fm_RT_trimmed:     (1 + Language * Type | InferPattern)
+                         Df    AIC    BIC  logLik deviance  Chisq Chi Df Pr(>Chisq)
+fm_RT_trimmed_nointeract 47 3491.6 3721.0 -1698.8   3397.6                         
+fm_RT_trimmed            49 3491.9 3731.1 -1697.0   3393.9 3.6677      2     0.1598
+```
+
+Here's the model output for the model with the interaction:
+
+```
+> summary(fm_RT_trimmed)
+Linear mixed model fit by maximum likelihood  ['lmerMod']
+Formula: RT_trimmed ~ Language * Type + (1 + Language * Type | Subject) +      (1 + Language * Type | InferPattern)
+   Data: d_infe_corr
+
+     AIC      BIC   logLik deviance df.resid 
+  3491.9   3731.1  -1697.0   3393.9      925 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-2.3635 -0.6018 -0.2069  0.3240  3.5815 
+
+Random effects:
+ Groups       Name                                Variance Std.Dev. Corr                         
+ Subject      (Intercept)                         0.735373 0.85754                               
+              LanguageL2_vs_L1                    0.071684 0.26774  -0.51                        
+              TypeSpat_vs_Cont                    0.060490 0.24595   0.13  0.16                  
+              TypeVisual_vs_rest                  0.013906 0.11793  -0.36 -0.43 -0.61            
+              LanguageL2_vs_L1:TypeSpat_vs_Cont   0.031803 0.17833  -0.57  0.27 -0.86  0.51      
+              LanguageL2_vs_L1:TypeVisual_vs_rest 0.009635 0.09816   0.51 -0.90 -0.37  0.60 -0.09
+ InferPattern (Intercept)                         0.010864 0.10423                               
+              LanguageL2_vs_L1                    0.014260 0.11942   0.05                        
+              TypeSpat_vs_Cont                    0.014847 0.12185   0.93 -0.32                  
+              TypeVisual_vs_rest                  0.003268 0.05717  -0.89  0.40 -1.00            
+              LanguageL2_vs_L1:TypeSpat_vs_Cont   0.009561 0.09778  -0.93  0.31 -0.99  0.99      
+              LanguageL2_vs_L1:TypeVisual_vs_rest 0.001235 0.03515   0.50  0.79  0.19 -0.11 -0.24
+ Residual                                         1.661521 1.28900                               
+Number of obs: 974, groups:  Subject, 24; InferPattern, 8
+
+Fixed effects:
+                                    Estimate Std. Error t value
+(Intercept)                          2.24023    0.18373  12.193
+LanguageL2_vs_L1                    -0.20600    0.08072  -2.552
+TypeSpat_vs_Cont                     0.13564    0.08366   1.621
+TypeVisual_vs_rest                  -0.04467    0.04300  -1.039
+LanguageL2_vs_L1:TypeSpat_vs_Cont   -0.07595    0.07168  -1.060
+LanguageL2_vs_L1:TypeVisual_vs_rest  0.07021    0.03761   1.867
+
+Correlation of Fixed Effects:
+            (Intr) LnL2__L1 TyS__C TypV__ LL2__L1:TS
+LnggL2_v_L1 -0.329                                  
+TypSpt_vs_C  0.168 -0.018                           
+TypVsl_vs_r -0.276 -0.058   -0.446                  
+LL2__L1:TS_ -0.367  0.167   -0.525  0.369           
+LL2__L1:TV_  0.296 -0.194   -0.086  0.159 -0.064    
+convergence code: 0
+singular fit
+```
+
+While this way of analyzing the data results in a somewhat stronger coefficient
+estimate for the critical interaction, it still does not come out as statistically
+significant.

@@ -9,3 +9,6 @@
 *.xlsx
 
 *.html
+
+*.pdf
+!190107_isaksson_uppsats_slutv.pdf
