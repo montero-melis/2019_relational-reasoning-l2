@@ -3,12 +3,12 @@ title: "First-pass analyses"
 author: '[Guillermo Montero-Melis](https://www.mpi.nl/people/montero-melis-guillermo)'
 date: '`r as.character(format(Sys.Date(), format="%d/%m/%Y"))`'
 output:
+  pdf_document:
+    toc: yes
   html_document:
     depth: 2
     number_sections: yes
     theme: default
-    toc: yes
-  pdf_document:
     toc: yes
 ---
 
@@ -81,7 +81,10 @@ head(backgr)
 Inference task:
 
 ```{r}
-d_infe <- read.csv("../data/data_inference-task.csv", fileEncoding = "UTF-8")
+d_infe <- read.csv("../data/data_inference-task.csv", fileEncoding = "UTF-8", 
+                   stringsAsFactors = FALSE)
+# Want to change "visuospatial" to "spatial" for clarity
+d_infe$Type[d_infe$Type == "Visuospatial"] <- "Spatial"
 head(d_infe)
 ```
 
@@ -772,6 +775,36 @@ ggplot(rt_subj_summ, aes(x = Language, y = M)) +
 ```
 
 
+For AMLaP abstract:
+
+```{r}
+# NB: We remove control condition, for clarity.
+rt_subj_amlap <- rt_subj %>% filter(Type != "Control") 
+rt_subj_amlap
+rt_subj_summ <- rt_subj %>%
+  group_by(Language, Type) %>%
+  summarise(M = mean(logRT), SE = sem_fun(logRT))
+
+rt_subj_summ %>%
+  filter(Type != "Control") %>%
+ggplot(aes(x = Language, y = M)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = M - 1.96 * SE, ymax = M + 1.96 * SE), width = .25,
+                size = 1) +
+  geom_jitter(data = rt_subj %>% filter(Type != "Control"), aes(y = logRT, colour = Language), height = 0, 
+              alpha = .4) +
+  facet_grid(. ~ Type) +
+  ylab("Response Times\n(log seconds)") +
+  theme_bw()
+```
+
+Save to disk (perhaps uncomment next line?)
+
+```{r}
+ggsave("fig_exp2_amlap.png", height = 2.5, width = 5)
+```
+
+
 
 ### LMM analysis
 
@@ -780,12 +813,14 @@ Appropriate coding for factors:
 
 ```{r}
 # Sum coding for Language
+d_infe_corr$Language <- factor(d_infe_corr$Language)
 contrasts(d_infe_corr$Language) <- - contr.sum(2)
 colnames(contrasts(d_infe_corr$Language)) <- "L2_vs_L1"
 contrasts(d_infe_corr$Language)
 
 # Type, with 2 possibilities
 # 1) Helmert coding
+d_infe_corr$Type <- factor(d_infe_corr$Type)
 contrasts(d_infe_corr$Type) <- contr.helmert(3)
 colnames(contrasts(d_infe_corr$Type)) <- c("Spat_vs_Cont", "Visual_vs_rest")
 contrasts(d_infe_corr$Type)
@@ -1112,6 +1147,8 @@ ggplot(rt_subj_summ, aes(x = Language, y = M)) +
   facet_grid(. ~ Type) +
   theme_bw()
 ```
+
+
 
 
 
