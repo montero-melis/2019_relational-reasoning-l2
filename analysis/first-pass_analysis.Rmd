@@ -3,12 +3,12 @@ title: "First-pass analyses"
 author: '[Guillermo Montero-Melis](https://www.mpi.nl/people/montero-melis-guillermo)'
 date: '`r as.character(format(Sys.Date(), format="%d/%m/%Y"))`'
 output:
-  pdf_document:
-    toc: yes
   html_document:
     depth: 2
     number_sections: yes
     theme: default
+    toc: yes
+  pdf_document:
     toc: yes
 ---
 
@@ -802,6 +802,7 @@ Save to disk (perhaps uncomment next line?)
 
 ```{r}
 ggsave("fig_exp2_amlap.png", height = 2.5, width = 5)
+ggsave("fig_exp2_amlap.pdf", height = 2.5, width = 5)
 ```
 
 
