@@ -10,5 +10,7 @@
 
 *.html
 
+*.png
+
 *.pdf
 !190107_isaksson_uppsats_slutv.pdf

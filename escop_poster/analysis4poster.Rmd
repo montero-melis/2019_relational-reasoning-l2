@@ -1,0 +1,720 @@
+---
+title: "Analysis and figures for poster presented at ESCOP 2019"
+author: '[Guillermo Montero-Melis](https://www.mpi.nl/people/montero-melis-guillermo)'
+date: '`r as.character(format(Sys.Date(), format="%d/%m/%Y"))`'
+output:
+  html_document:
+    depth: 2
+    number_sections: yes
+    theme: default
+    toc: yes
+  pdf_document:
+    toc: yes
+---
+
+
+Introduction
+============
+
+Run analysis and create figures for poster presented at ESCoP 2019 conference
+(Isaksson, Ostarek, and Montero-Melis, 2019).
+
+*NB*:
+The data has been pre-processed in a separate script (`data/process_data.Rmd`).
+
+
+Set up workspace
+================
+
+Libraries
+---------
+
+```{r setup, include=TRUE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(tidyr)
+library(lme4)
+```
+
+
+Data
+----
+
+Matching task:
+
+```{r}
+# Matching task
+d_match <- read.csv("../data/data_matching-task.csv", fileEncoding = "UTF-8")
+head(d_match)
+```
+
+Form/category task:
+
+```{r}
+# form/category task cleaned version (see "~/data/process_data.Rmd" for details)
+d_fc <- read.csv("../data/data_form-category-task_cleaned.csv", fileEncoding = "UTF-8")
+head(d_fc)
+```
+
+
+Participant background data, including L2 English proficiency (LexTale):
+
+```{r}
+backgr <- read.csv("../data/participant-background.csv", fileEncoding = "UTF-8")
+head(backgr)
+```
+
+
+Inference task:
+
+```{r}
+d_infe <- read.csv("../data/data_inference-task.csv", fileEncoding = "UTF-8", 
+                   stringsAsFactors = FALSE)
+# Want to change "visuospatial" to "spatial" for clarity
+d_infe$Type[d_infe$Type == "Visuospatial"] <- "Spatial"
+head(d_infe)
+```
+
+
+
+Matching task
+=============
+
+The matching task was used to exclude items in the form/category task for those
+participants who could not match it correctly (assuming that their performance
+on such an item is uninformative if they don't know the meaning of the word).
+
+*NB*:
+These exclusions resulted in the "cleaned" dataset for the form/category task
+(see Data above).
+
+How accurate were subjects on this task?
+
+```{r}
+theme_match <- theme_classic() +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+plot <- d_match %>% group_by(Subject) %>% summarise(Accuracy = mean(Score)) %>%
+  ggplot(aes(x = 0, y = Accuracy)) + 
+  ylim(0, 1) +
+  geom_violin(width = .5) +
+  geom_jitter(height = 0, width = .1, alpha = .5) +
+  ggtitle("Matching accuracy by participants")
+plot + theme_match
+```
+
+Show accuracy by items instead:
+
+```{r}
+plot <- d_match %>% group_by(TargetWord) %>% summarise(Accuracy = mean(Score)) %>%
+  ggplot(aes(x = 0, y = Accuracy)) + 
+  ylim(0, 1) +
+  geom_violin(width = .5) +
+  geom_jitter(height = 0, width = .1, alpha = .5) +
+  ggtitle("Matching accuracy by items")
+plot + theme_match
+```
+
+A few items were apparently more difficult, especially "hairspray":
+
+```{r}
+d_match$Error <- ifelse(d_match$Score == 1, 0, 1)
+d_match %>% group_by(TargetWord) %>% 
+  summarise(NbErrors = sum(Error)) %>%
+  arrange(- NbErrors) %>%
+  print(n = 5)
+```
+
+
+Visual imagery task: Shape vs category judgements
+=======================
+
+By-subject visualization
+------------------
+
+Summarize each participant's data as a single number, namely their mean
+accuracy (`Acc`) in each task and language:
+
+```{r}
+d_fc_subj <- d_fc %>% 
+  group_by(Subject, Task, Language) %>%
+  summarise(Acc = mean(Score))
+```
+
+Identify outliers (wrt to Tukey/ggplot2 boxplots):
+
+```{r}
+d_fc_subj <- d_fc %>% 
+  group_by(Subject, Task, Language) %>%
+  summarise(Acc = mean(Score))
+
+# To be able to plot the label names of outliers (SPSS does it by default), we
+# adapt the solution proposed in
+# https://stackoverflow.com/questions/33524669/labeling-outliers-of-boxplots-in-r
+is_outlier <- function(x) {
+  return(x < quantile(x, 0.25) - 1.5 * IQR(x) | x > quantile(x, 0.75) + 1.5 * IQR(x))
+}
+# Outlier contains a subject ID if they are an outlier for a task-language combo
+d_fc_subj <- d_fc_subj %>%
+  group_by(Task, Language) %>%
+  mutate(Outlier = ifelse(is_outlier(Acc), Subject, as.numeric(NA)))
+head(d_fc_subj)
+```
+
+
+```{r}
+plot <- ggplot(d_fc_subj, aes(x = Language, y = Acc)) +
+  geom_violin() +
+  geom_jitter(height = 0, width = .25, alpha = .5, aes(colour = Language)) +
+  facet_grid(. ~ Task) +
+  ylab("Accuracy") +
+  ylim(.5, 1)
+plot + theme_classic()
+plot +  theme_bw()
+```
+
+
+
+
+Generalized Linear Mixed Model (GLMM) analysis
+---------------------------------
+
+The hypothesis is that there should be an interaction between language and
+task, such that participants perform worse in the shape task when carrying
+it out in the L2, but their performance should not be worse in the category
+task.
+
+
+```{r}
+# Sum coding for factors
+# Task
+contrasts(d_fc$Task) <- contr.sum(2)
+colnames(contrasts(d_fc$Task)) <- "Categ_vs_Shape"
+contrasts(d_fc$Task)
+# Language
+contrasts(d_fc$Language) <- - contr.sum(2)
+colnames(contrasts(d_fc$Language)) <- "L2_vs_L1"
+contrasts(d_fc$Language)
+```
+
+
+```{r}
+# fail to converge...
+
+# fm_fc <- glmer(Score ~ Task * Language +
+#                  (Task * Language | Subject) +
+#                  (Task * Language | ItemID),
+#                data = d_fc,
+#                family = "binomial")
+
+# fm_fc <- glmer(Score ~ Task * Language +
+#                  (Task * Language | Subject) +
+#                  (Task + Language | ItemID),
+#                data = d_fc,
+#                family = "binomial")
+
+# The only model I can get to converge with any random slope by subjects:
+# fm_fc7 <- glmer(Score ~ Task * Language +
+#                   (1 + Task | Subject) +
+#                   (1 | ItemID),
+#                 data = d_fc,
+#                 family = "binomial")
+# summary(fm_fc7)
+```
+
+
+
+Inference task
+=============
+
+Accuracy
+--------
+
+
+
+### By subject
+
+
+Summarize each participant's data as a single number, namely their mean
+accuracy (`Acc`) in each task and language:
+
+```{r}
+d_infe_subj <- d_infe %>% 
+  group_by(Subject, Language, Type) %>%
+  summarise(Acc = mean(Score))
+head(d_infe_subj)
+```
+
+
+```{r}
+ggplot(d_infe_subj, aes(x = Language, y = Acc)) +
+  geom_boxplot(outlier.shape = 4) +
+  geom_jitter(height = 0, alpha = .5, aes(colour = Language)) +
+  facet_grid(. ~ Type) +
+  ylim(0, 1) +
+  geom_hline(yintercept = .5, linetype = "dotted") +
+  theme_bw()
+```
+
+
+Let us see if either the valid or invalid inferences were more difficult:
+
+```{r, fig.height = 8}
+d_infe %>%
+  mutate(Val = ifelse(Valid == 1, "valid", "invalid")) %>%
+  group_by(Subject, Language, Type, Val) %>%
+  summarise(Acc = mean(Score)) %>%
+  ggplot(aes(x = Language, y = Acc)) +
+  geom_boxplot(outlier.shape = 4) +
+  geom_jitter(height = 0, alpha = .5, aes(colour = Language)) +
+  facet_grid(Type ~ Val) +
+  ylim(0, 1) +
+  geom_hline(yintercept = .5, linetype = "dotted") +
+  theme_bw()
+```
+
+There is actually not much evidence that invalid inferences are harder than
+valid ones, or the other way around.
+
+
+### By-item (i.e., by inference pattern)
+
+Let's do an analogous visualization but now grouping by inference pattern
+(`InferPattern`) rather than subject:
+
+```{r}
+d_infe_ite <- d_infe %>%
+  mutate(Val = ifelse(Valid == 1, "valid", "invalid")) %>%
+  group_by(InferPattern, Language, Type, Val) %>%
+  summarise(Acc = mean(Score))
+
+ggplot(d_infe_ite, aes(x = Language, y = Acc)) +
+  geom_boxplot(outlier.shape = 4) +
+  geom_jitter(height = 0, alpha = .5, aes(colour = Language)) +
+  facet_grid(. ~ Type) +
+  ylim(0, 1) +
+  geom_hline(yintercept = .5, linetype = "dotted") +
+  theme_bw()
+```
+
+Interestingly, there seems to be less variation in the items than in subjects.
+So all inference patterns were roughly equally hard.
+
+We can also colour the dots with regard to validity of the items, to see if
+we see some evidence now of valid vs invalid items having a different degree
+of difficulty:
+
+```{r}
+ggplot(d_infe_ite, aes(x = Language, y = Acc)) +
+  geom_boxplot(outlier.shape = 4) +
+  geom_jitter(height = 0, alpha = .5, aes(colour = Val)) +
+  facet_grid(. ~ Type) +
+  ylim(0, 1) +
+  geom_hline(yintercept = .5, linetype = "dotted") +
+  theme_bw()
+```
+
+
+We can make the comparison even more explicit, as we did above between subjects:
+
+```{r, fig.height = 8}
+ggplot(d_infe_ite, aes(x = Language, y = Acc)) +
+  geom_boxplot(outlier.shape = 4) +
+  geom_jitter(height = 0, alpha = .5, aes(colour = Language)) +
+  facet_grid(Type ~ Val) +
+  ylim(0, 1) +
+  geom_hline(yintercept = .5, linetype = "dotted") +
+  theme_bw()
+```
+
+Perhaps there is an indication that invalid inferences yielded slightly higher
+accuracies. This in turn could be due to participants having a slight bias
+towards rejecting the validity of inferences...
+
+**It would probably be a good idea to compute d' (*d-prime*) scores!**
+
+
+Response times
+-------------
+
+### General overview
+
+First we need to get an idea of how response times (RTs) were distributed:
+How much dispersion was there within and between participants? Were the
+distributions very skewed?
+
+```{r}
+# Compute by speaker averages for later plotting and add that to data frame
+mean_RT <- d_infe %>% group_by(Subject) %>% 
+  summarise(Mean_RT = mean(RT),
+            Median_RT = median(RT))
+d_infe <- left_join(d_infe, mean_RT)
+# Order Subject levels according to Median_RT
+d_infe$Subject <- factor(d_infe$Subject, levels = mean_RT$Subject[order(mean_RT$Median_RT)])
+```
+
+
+```{r, fig.height=10}
+ggplot(d_infe, aes(x = Language, y = RT)) +
+  geom_boxplot() +
+  facet_wrap(~ Subject) +
+  geom_hline(aes(yintercept = Mean_RT), linetype = "dotted", colour = "red") +
+  geom_hline(aes(yintercept = Median_RT), linetype = "dashed", colour = "blue") +
+  ggtitle("Raw Response Times (no outliers removed)") +
+  theme_bw()
+```
+
+The plots show that the data are very skewed, as is typical in RTs.
+
+Here is a data summary:
+
+```{r}
+summary(d_infe$RT)
+```
+
+While 75% of the data are RT < `r summary(d_infe$RT)[5]`, extreme observations
+go above 20 seconds!
+
+
+### Correct vs incorrect trials
+
+In the previous section, we looked at all the trials, independent of whether
+participants' responses were correct or not. However, Knauff and May (2006)
+removed incorrect trials from the RT analyses, and so did Petrus. This is
+standard practice and it actually makes sense because one may wonder if subjects
+were even paying attention on incorrect trials.
+
+First, let's see RTs as a function of response accuracy:
+
+```{r}
+ggplot(d_infe, aes(x = factor(Score), y = RT)) +
+  geom_boxplot() +
+  facet_grid(. ~ Language)
+```
+
+Indeed, in both L1 and L2 there is a tendency for incorrect trials to be
+associated to longer RTs:
+
+```{r}
+d_infe %>% group_by(Language, Score) %>% 
+  summarise(Mean_RT = mean(RT), SD_RT = sd(RT)) %>%
+  kable
+```
+
+Yes, the mean effect is indeed quite substantial: incorrect responses yield
+roughly 1.5 seconds longer RTs.
+
+See the script `analysis/first-pass_analysis.Rmd` for a more detailed breakdown
+of incorrect responses by participants and by items.
+
+
+### Exclude incorrect trials
+
+In any case, it makes sense to exclude incorrect trials from further analysis:
+
+```{r}
+d_infe_corr <- d_infe %>% filter(Score == 1)
+```
+
+
+
+### Log-transorm the data to avoid the strong right-skew?
+
+
+```{r}
+# Because log of negative number is not defined, we somewhat arbitrarily add
+# 0.5 to all RTs (just a shift in scale) to make them all positive:
+d_infe_corr$logRT <- log(d_infe_corr$RT + 0.5)
+ggplot(d_infe_corr, aes(x = logRT)) + 
+  geom_histogram(aes(y=..density..),  # Histogram with density instead of count on y-axis
+                 colour="black", fill="white") +
+  geom_density(alpha=.2, fill="#FF6666")  # Overlay with transparent density plot
+```
+
+
+The distribution of `logRT`s is much less skewed, although we might now
+observe a slight left-skew instead. Note that this transformation is a
+monotonically increasing function, so the order of the observations is
+preserved.
+
+Let us look at the same plot of by-subject observations as above, but
+now using the log-transformed RT data.
+
+```{r}
+# Compute by speaker averages and medians for logRT
+mean_logRT <- d_infe_corr %>% group_by(Subject) %>% 
+  summarise(Mean_logRT = mean(logRT),
+            Median_logRT = median(logRT))
+d_infe_corr <- left_join(d_infe_corr, mean_logRT)
+# Order Subject levels according to Median_logRT now
+d_infe_corr$Subject <- factor(
+  d_infe_corr$Subject, 
+  levels = mean_logRT$Subject[order(mean_logRT$Median_logRT)]
+  )
+```
+
+
+```{r, fig.height=10}
+ggplot(d_infe_corr, aes(x = Language, y = logRT)) +
+  geom_boxplot() +
+  facet_wrap(~ Subject) +
+  geom_hline(aes(yintercept = Mean_logRT), linetype = "dotted", colour = "red") +
+  geom_hline(aes(yintercept = Median_logRT), linetype = "dashed", colour = "blue") +
+  ggtitle("Log-transformed Response Times (no observations removed)") +
+theme_bw()
+```
+
+Under the log transformation, the problem of removing outliers, which always
+involves arbitrary cutoffs, is largely avoided.
+
+We proceed with log-transformed data for all RT analyses.
+
+A note on the interpretation of log-RTs in regression analysis:
+
+There is a different assumption underlying the choice of whether to analyze the
+dependent variable reaction time as raw scores or on a logarithmic scale.
+The assumption has to do with how one believes the manipulations to be related
+to the DV. Taking raw RTs assumes that the effect of the predictor on the DV will
+be linear, i.e. a regression coefficient of 2 would indicate that RTs increase
+by adding 2 for any unit you move on the predictor. However, if you model the
+DV as logRT, we assume that the effect is multiplicative. This means that a
+regression coefficient of 2 indicates that RTs are *multiplied* by 2.
+
+This is important to keep in mind for the interpretation of the analyses.
+
+
+### By subject
+
+
+```{r}
+# Summarize RTs by subject
+rt_subj <- d_infe_corr %>%
+  group_by(Subject, Language, Type) %>%
+  summarise(logRT = mean(logRT))
+head(rt_subj, 7)
+```
+
+
+Overlay the individual subject means to the cell means and 95% CIs (assuming
+normality, i.e. +/- 2 SE) to get a better idea of the dispersion in the data.
+(assuming normality, i.e. +/- 2 SE).
+
+```{r}
+sem_fun <- function(x) sd(x) / sqrt(length(x))
+rt_subj_summ <- rt_subj %>%
+  group_by(Language, Type) %>%
+  summarise(M = mean(logRT), SE = sem_fun(logRT))
+rt_subj_summ
+```
+
+
+```{r}
+plot_infer_RT <- ggplot(rt_subj_summ, aes(x = Language, y = M)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = M - 1.96 * SE, ymax = M + 1.96 * SE), width = .25,
+                size = 1) +
+  geom_jitter(data = rt_subj, aes(y = logRT, colour = Language), height = 0, 
+              alpha = .4) +
+  facet_grid(. ~ Type) +
+  ylab("Response Times\n(log seconds)") +
+  theme_bw()
+plot_infer_RT
+```
+
+At least numerically, the data suggest the expected tendency:
+The visual type of inferences were more demanding in the L1 than in the L2.
+
+We can add a little bit more of information to the graph by connecting
+observations from the same speaker in the different languages. This basically
+shows individual by-subject slopes (as will later be captured by the random
+effects in linear mixed model, LMM).
+
+```{r}
+plot_infer_RT +
+  geom_line(data = rt_subj, aes(y = logRT, group = Subject), alpha = .3)
+```
+
+Save to disk (perhaps uncomment next line?)
+
+```{r}
+# ggsave("fig_exp2_amlap.png", height = 2.5, width = 5)
+# ggsave("fig_exp2_amlap.pdf", height = 2.5, width = 5)
+```
+
+
+
+### LMM analysis
+
+Appropriate coding for factors:
+
+
+```{r}
+# Sum coding for Language
+d_infe_corr$Language <- factor(d_infe_corr$Language)
+contrasts(d_infe_corr$Language) <- - contr.sum(2)
+colnames(contrasts(d_infe_corr$Language)) <- "L2_vs_L1"
+contrasts(d_infe_corr$Language)
+
+# Inference Type: Helmert coding
+d_infe_corr$Type <- factor(d_infe_corr$Type)
+contrasts(d_infe_corr$Type) <- contr.helmert(3)
+colnames(contrasts(d_infe_corr$Type)) <- c("Spat_vs_Cont", "Visual_vs_rest")
+contrasts(d_infe_corr$Type)
+contrasts(d_infe_corr$Language)
+```
+
+
+Run the models (or comment them as they take a long time)
+
+```{r}
+# # Start with full model as per Barr et al. (2013)
+# fm_RT <- lmer(
+#   logRT ~ Language * Type +
+#     (1 + Language * Type | Subject) +
+#     (1 + Language * Type | InferPattern),
+#   data = d_infe_corr, REML = FALSE
+#   )
+# # boundary (singular) fit: see ?isSingular
+# 
+# # Stepwise simplification:
+# fm_RT <- lmer(
+#   logRT ~ Language * Type +
+#     (1 + Language * Type | Subject) +
+#     (1 + Language + Type | InferPattern),
+#   data = d_infe_corr, REML = FALSE
+#   )
+# # boundary (singular) fit: see ?isSingular
+# 
+# fm_RT <- lmer(
+#   logRT ~ Language * Type +
+#     (1 + Language * Type | Subject) +
+#     (1 + Language | InferPattern),
+#   data = d_infe_corr, REML = FALSE
+#   )
+# # boundary (singular) fit: see ?isSingular
+# 
+# fm_RT <- lmer(
+#   logRT ~ Language * Type +
+#     (1 + Language + Type | Subject) +
+#     (1 + Language | InferPattern),
+#   data = d_infe_corr, REML = FALSE
+#   )
+# # Model failed to converge with max|grad| = 0.0143437 (tol = 0.002, component 1)
+# 
+# fm_RT <- lmer(
+#   logRT ~ Language * Type +
+#     (1 + Language | Subject) +
+#     (1 + Language | InferPattern),
+#   data = d_infe_corr, REML = FALSE
+#   )
+# # Model failed to converge with max|grad| = 0.0306014 (tol = 0.002, component 1)
+
+fm_RT <- lmer(
+  logRT ~ Language * Type +
+    (1 + Language | Subject) +
+    (1 | InferPattern),
+  data = d_infe_corr, REML = FALSE
+  )
+# This one converges
+summary(fm_RT)
+
+# Model WITHOUT critical interaction
+fm_RT_nointeract <- lmer(
+  logRT ~ Language + Type +
+    (1 + Language | Subject) +
+    (1 | InferPattern),
+  data = d_infe_corr, REML = FALSE
+  )
+summary(fm_RT_nointeract)
+```
+
+Model comparison by LRT
+
+```{r}
+anova(fm_RT, fm_RT_nointeract)
+```
+
+
+The interaction of Type and Language does not come out as significant.
+
+
+
+### A somewhat indirect subject analysis
+
+One could also see if there is a correlation between how proficient speakers
+are in their L2 and how much of a "penalty" they pay for doing the inferences
+of the visual type.
+
+The idea would here be that the lower your L2 proficiency is, the bigger
+the difference should be between how fast you are answering these inferences
+in your L1 and L2, and crucially, the relation should be as follows:
+
+**Prediction**:
+
+With lower L2 proficiency, the difference between RTs in the L1 and L2 for
+visual inferences should be greater (with an advantage in L2); with higher
+proficiency, the difference in RTs should be reduced or even zero.
+
+Let us compute, for each subject, the difference in their L1/L2 RTs for visual
+items:
+
+```{r}
+# Subset form/category task data in L2 only:
+d_fc_l2 <- d_fc_subj %>% select(-Outlier) %>% filter(Language == "L2")
+# Add their proficiency scores:
+d_fc_l2 <- left_join(d_fc_l2, backgr %>% select(Subject, LexTale))
+```
+
+
+```{r}
+RTs_proficiency <- d_infe_corr %>%
+  filter(Type == "Visual") %>%
+  group_by(Subject, Language) %>%
+  summarise(M = mean(logRT)) %>%
+  # From long to wide
+  spread(Language, M) %>%
+  # compute difference
+  mutate(L1_minus_L2 = L1 - L2) %>%
+  # Join with information about proficiency and accuracy in the shape task
+  left_join(d_fc_l2 %>%
+              ungroup() %>%
+              mutate(Subject = as.character(Subject)) %>% 
+              filter(Task == "Shape") %>% 
+              select(Subject, Acc, LexTale))
+head(RTs_proficiency)
+```
+
+```{r}
+ggplot(RTs_proficiency, aes(x = LexTale, y = L1_minus_L2)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+Pearson correlation test
+
+```{r}
+with(RTs_proficiency, cor.test(L1_minus_L2, LexTale))
+```
+
+
+What about the accuracy?
+
+```{r}
+ggplot(RTs_proficiency, aes(x = Acc, y = L1_minus_L2)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+
+Nahh...
+
+
+```{r}
+with(RTs_proficiency, cor.test(L1_minus_L2, Acc))
+```
+
