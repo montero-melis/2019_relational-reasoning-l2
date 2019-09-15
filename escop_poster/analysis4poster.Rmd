@@ -39,6 +39,11 @@ library(tidyr)
 library(lme4)
 ```
 
+```{r}
+# Global parameters for consistency
+my_base_size <- 20
+```
+
 
 Data
 ----
@@ -169,13 +174,15 @@ head(d_fc_subj)
 
 ```{r}
 plot <- ggplot(d_fc_subj, aes(x = Language, y = Acc)) +
-  geom_violin() +
+  geom_boxplot(outlier.shape = 4, alpha = .3) +
   geom_jitter(height = 0, width = .25, alpha = .5, aes(colour = Language)) +
   facet_grid(. ~ Task) +
   ylab("Accuracy") +
-  ylim(.5, 1)
-plot + theme_classic()
-plot +  theme_bw()
+  ylim(.5, 1) +
+  ggtitle("Is visual reasoning less impeded in L2\nthan in L1?")
+plot + theme_classic(base_size = my_base_size)
+# plot +  theme_bw(base_size = my_base_size)
+ggsave("visual_imagery.pdf", width = 8, height = 4)
 ```
 
 
@@ -536,7 +543,10 @@ effects in linear mixed model, LMM).
 
 ```{r}
 plot_infer_RT +
-  geom_line(data = rt_subj, aes(y = logRT, group = Subject), alpha = .3)
+  geom_line(data = rt_subj, aes(y = logRT, group = Subject), alpha = .3) +
+  xlab("") +
+  theme_classic(base_size = my_base_size)
+ggsave("inference_RT.pdf", width = 8, height = 4)
 ```
 
 Save to disk (perhaps uncomment next line?)
@@ -647,8 +657,8 @@ The interaction of Type and Language does not come out as significant.
 ### A somewhat indirect subject analysis
 
 One could also see if there is a correlation between how proficient speakers
-are in their L2 and how much of a "penalty" they pay for doing the inferences
-of the visual type.
+are in their L2 and the size of the interaction effect, i.e., the size of the
+"penalty" they pay for doing the inferences of the visual type in L1 vs L2.
 
 The idea would here be that the lower your L2 proficiency is, the bigger
 the difference should be between how fast you are answering these inferences
@@ -661,60 +671,130 @@ visual inferences should be greater (with an advantage in L2); with higher
 proficiency, the difference in RTs should be reduced or even zero.
 
 Let us compute, for each subject, the difference in their L1/L2 RTs for visual
-items:
+items vs the two other conditions.
+
+
 
 ```{r}
+# First, a dataset with participants' L2 proficiency and their accuracy on the
+# shape task
+
 # Subset form/category task data in L2 only:
-d_fc_l2 <- d_fc_subj %>% select(-Outlier) %>% filter(Language == "L2")
-# Add their proficiency scores:
-d_fc_l2 <- left_join(d_fc_l2, backgr %>% select(Subject, LexTale))
+l2_profic <- d_fc_subj %>% 
+  ungroup() %>%
+  filter(Language == "L2", Task == "Shape") %>%
+  select(Subject, Acc_shape = Acc) %>% 
+  left_join(backgr %>% select(Subject, LexTale)) %>%
+  mutate(Subject = as.character(Subject))  # for later join
 ```
 
 
+#### Visual vs spatial
+
 ```{r}
 RTs_proficiency <- d_infe_corr %>%
-  filter(Type == "Visual") %>%
-  group_by(Subject, Language) %>%
+  filter(Type %in% c("Visual", "Spatial")) %>%
+  group_by(Subject, Language, Type) %>%
   summarise(M = mean(logRT)) %>%
   # From long to wide
   spread(Language, M) %>%
   # compute difference
-  mutate(L1_minus_L2 = L1 - L2) %>%
+  mutate(L2_advantage = L1 - L2) %>%
+  # From long to wide
+  select(-L1, -L2) %>%  # Drop L1, L2
+  spread(Type, L2_advantage) %>%
+  mutate(L2_visual_advantage = Spatial - Visual) %>%
+  select(Subject, L2_visual_advantage) %>%
   # Join with information about proficiency and accuracy in the shape task
-  left_join(d_fc_l2 %>%
-              ungroup() %>%
-              mutate(Subject = as.character(Subject)) %>% 
-              filter(Task == "Shape") %>% 
-              select(Subject, Acc, LexTale))
+  left_join(l2_profic)
 head(RTs_proficiency)
 ```
 
 ```{r}
-ggplot(RTs_proficiency, aes(x = LexTale, y = L1_minus_L2)) +
+ggplot(RTs_proficiency, aes(x = LexTale, y = L2_visual_advantage)) +
   geom_point() +
-  geom_smooth(method = "lm")
+  geom_smooth(method = "lm") +
+  xlab("L2 proficiency (LexTale)") +
+  ylab("L2 advantage\nvisual vs spatial") +
+  theme_classic(base_size = my_base_size)
+ggsave("inference_L2advantage_proficiency_visual_vs_spatial.pdf", width = 8, height = 4)
 ```
 
 Pearson correlation test
 
 ```{r}
-with(RTs_proficiency, cor.test(L1_minus_L2, LexTale))
+with(RTs_proficiency, cor.test(L2_visual_advantage, LexTale))
 ```
 
 
 What about the accuracy?
 
 ```{r}
-ggplot(RTs_proficiency, aes(x = Acc, y = L1_minus_L2)) +
+ggplot(RTs_proficiency, aes(x = Acc_shape, y = L2_visual_advantage)) +
   geom_point() +
   geom_smooth(method = "lm")
 ```
 
 
-Nahh...
-
+There is less spread along the x-axis. The correlation is not significant:
 
 ```{r}
-with(RTs_proficiency, cor.test(L1_minus_L2, Acc))
+with(RTs_proficiency, cor.test(L2_visual_advantage, Acc_shape))
+```
+
+
+
+
+#### Visual vs control
+
+```{r}
+RTs_proficiency <- d_infe_corr %>%
+  filter(Type %in% c("Visual", "Control")) %>%
+  group_by(Subject, Language, Type) %>%
+  summarise(M = mean(logRT)) %>%
+  # From long to wide
+  spread(Language, M) %>%
+  # compute difference
+  mutate(L2_advantage = L1 - L2) %>%
+  # From long to wide
+  select(-L1, -L2) %>%  # Drop L1, L2
+  spread(Type, L2_advantage) %>%
+  mutate(L2_visual_advantage = Control - Visual) %>%
+  select(Subject, L2_visual_advantage) %>%
+  # Join with information about proficiency and accuracy in the shape task
+  left_join(l2_profic)
+head(RTs_proficiency)
+```
+
+```{r}
+ggplot(RTs_proficiency, aes(x = LexTale, y = L2_visual_advantage)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  xlab("L2 proficiency (LexTale)") +
+  ylab("L2 advantage\nvisual vs control") +
+  theme_classic(base_size = my_base_size)
+ggsave("inference_L2advantage_proficiency_visual_vs_control.pdf", width = 8, height = 4)
+```
+
+Pearson correlation test
+
+```{r}
+with(RTs_proficiency, cor.test(L2_visual_advantage, LexTale))
+```
+
+
+What about the accuracy?
+
+```{r}
+ggplot(RTs_proficiency, aes(x = Acc_shape, y = L2_visual_advantage)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+
+There is less spread along the x-axis. The correlation is not significant:
+
+```{r}
+with(RTs_proficiency, cor.test(L2_visual_advantage, Acc_shape))
 ```
 
